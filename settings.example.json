@@ -40,11 +40,10 @@
       "Bash(*--no-verify*)",
       "Read(secrets/**)",
       "Read(./secrets/**)",
-      "Read(/workspaces/tlc-analysis/secrets/**)",
       "Bash(cat secrets/*)",
       "Bash(cat ./secrets/*)",
       "Bash(cat *salt*)",
-      "Bash(*secrets/deid_salt*)"
+      "Bash(*salt*)"
     ],
     "additionalDirectories": [
       "/tmp"
