@@ -37,8 +37,8 @@ Consider TDD especially for complex features or when requirements are unclear.
 
 ## TDD Examples
 
-- [🔴 test: add failing test for updateCommandCatalog isolation (TDD RED)](../../commit/00e7a22)
-- [🔴 test: add failing tests for tdd.js framework detection (TDD RED)](../../commit/2ce43d1)
-- [🔴 test: add failing tests for learn.js functions (TDD RED)](../../commit/8b90d58)
+- `🔴 test: add failing test for updateCommandCatalog isolation (TDD RED)`
+- `🔴 test: add failing tests for tdd.js framework detection (TDD RED)`
+- `🔴 test: add failing tests for learn.js functions (TDD RED)`
 - `test: add failing tests for formatBytes and estimateTokens (TDD RED)`
-- [🔴 test: add failing tests for findBrokenLinks (TDD RED phase)](../../commit/8ec6319)
+- `🔴 test: add failing tests for findBrokenLinks (TDD RED phase)`
