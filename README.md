@@ -37,8 +37,10 @@ an analysis that must be reproducible from a container, a devcontainer that cann
 node install.js --project ../my-analysis --apply
 ```
 
-Guide links in `CLAUDE.md` are rewritten from `~/.claude/guides/` to `.claude/guides/` so
-they resolve inside the project. Beside the copies it writes two things:
+Links to this repo's own files are rewritten so they resolve inside the project: guide links
+from `~/.claude/guides/` to `.claude/guides/`, and `~/.claude/CLAUDE.md` to `CLAUDE.md`.
+`~/.claude/projects/`, Claude Code's transcript directory, is left alone. Beside the copies it
+writes two things:
 
 | Path | What it is |
 |---|---|
