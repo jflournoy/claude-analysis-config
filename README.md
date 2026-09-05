@@ -5,9 +5,9 @@ reviewer agents, and a hook that routes edited files to the reviewer that fits t
 reproducible statistical analysis in R, Stan and Python, where the deliverable is a published
 number and the bug that matters is the one that does not crash.
 
-No build system — no `package.json`, no npm dependencies. Tests run on `node --test`, which
-ships with Node. `--update` and `--adopt` shell out to `git` for the three-way merge and for
-reading this repo's history; nothing else does.
+Plain Node and nothing else: tests run on `node --test`, which ships with it, and `--update`
+and `--adopt` shell out to `git` for the three-way merge and for reading this repo's
+history.
 
 ## Install
 
@@ -61,11 +61,11 @@ as conflict markers — nothing picks a side quietly. A file the project deleted
 deleted; a file it edited with no baseline is skipped, not guessed at; a file this repo has
 dropped is reported and left in place.
 
-### Adopting a project that predates all this
+### Adopting a project with no baseline
 
-A project with a config copied by hand years ago has no baseline. `--adopt` reconstructs
-one: for each file it searches **this repo's own history** for the version the project's
-copy most resembles, and merges against that.
+A config copied in by hand has no baseline to merge against. `--adopt` reconstructs one:
+for each file it searches **this repo's own history** for the version the project's copy
+most resembles, and merges against that.
 
 ```bash
 node install.js --adopt ../my-analysis           # shows the base it found for each file
@@ -81,9 +81,9 @@ hand.
 
 It also reports what it will *not* touch: files under the project's `.claude/` that this
 repo does not ship, split into stale copies of things we once shipped (safe to delete),
-forks of them (a judgement call), and the project's own work (keep). Guides still at the
-old `CLAUDE_<name>.md` root path are found, merged into `.claude/guides/`, and left in
-place for you to delete.
+forks of them (a judgement call), and the project's own work (keep). Guides kept at the
+`CLAUDE_<name>.md` root path are found, merged into `.claude/guides/`, and left in place for
+you to delete.
 
 ### All of them are safe by default
 
@@ -133,9 +133,9 @@ session. Adding a file type is one entry in `RULES` plus a test.
 node --test test/*.test.js
 ```
 
-No install, no npm dependencies. The suite covers the dispatch table and every failure path,
-and checks every agent's frontmatter — the regression test for a real bug where all eight
-agents used the wrong schema, loaded silently as nothing, and no one noticed for months.
+The suite covers the dispatch table and every failure path, and checks every agent's
+frontmatter — the regression test for a real bug where all eight agents used the wrong
+schema, loaded silently as nothing, and no one noticed for months.
 
 Vendoring is tested against real git fixtures: every update outcome (fast-forward, clean
 merge, conflict, a deletion the project meant, a file with no baseline), and adopt's search
@@ -146,13 +146,9 @@ scratch at 79%.
 
 ## Credit
 
-The shape of this repo and several of its ideas come from Rebecca Murphey.
-
-It began as a fork of [rmurphey/claude-setup](https://github.com/rmurphey/claude-setup),
-and the history here still contains that lineage. When she replaced that project with
-[rmurphey/claude-config](https://github.com/rmurphey/claude-config) — config that lives at
-`~/.claude` rather than being copied per project — this followed, and took several things
-with it:
+The shape of this repo and several of its ideas come from Rebecca Murphey's
+[rmurphey/claude-config](https://github.com/rmurphey/claude-config), which this one descends
+from and still carries the MIT copyright of. What came across:
 
 - **Reviewer agents that fire automatically** on a `PostToolUse` hook keyed to the edited
   file's type. The single best idea here.
@@ -164,11 +160,6 @@ with it:
 Those files were written from scratch for this repo's domain (R, Stan, reproducible
 analysis) rather than copied, and each carries an attribution comment. Her originals are
 better suited to web development and worth reading directly.
-
-Where this diverges deliberately: dispatch lives in a tested lookup table rather than inline
-bash, because her own `determinism-reviewer` argues it should; the `.gitignore` is an
-allowlist rather than a denylist; and the auto-firing set is two reviewers rather than
-fifteen, which is what solo work supports.
 
 ## License
 
