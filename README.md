@@ -5,9 +5,9 @@ reviewer agents, and a hook that routes edited files to the reviewer that fits t
 reproducible statistical analysis in R, Stan and Python, where the deliverable is a published
 number and the bug that matters is the one that does not crash.
 
-Plain Node and nothing else: tests run on `node --test`, which ships with it, and `--update`
-and `--adopt` shell out to `git` for the three-way merge and for reading this repo's
-history.
+Plain Node, plus `git` for two of the commands: tests run on `node --test`, which ships with
+Node, and `--update` and `--adopt` shell out to `git` for the three-way merge and for reading
+this repo's history.
 
 ## Install
 
@@ -147,8 +147,8 @@ scratch at 79%.
 ## Credit
 
 The shape of this repo and several of its ideas come from Rebecca Murphey's
-[rmurphey/claude-config](https://github.com/rmurphey/claude-config), which this one descends
-from and still carries the MIT copyright of. What came across:
+[rmurphey/claude-config](https://github.com/rmurphey/claude-config); the copyright in
+[LICENSE](LICENSE) is hers. What came across:
 
 - **Reviewer agents that fire automatically** on a `PostToolUse` hook keyed to the edited
   file's type. The single best idea here.
