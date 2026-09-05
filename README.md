@@ -5,8 +5,9 @@ reviewer agents, and a hook that routes edited files to the reviewer that fits t
 reproducible statistical analysis in R, Stan and Python, where the deliverable is a published
 number and the bug that matters is the one that does not crash.
 
-No build system — no `package.json`, no dependencies. Tests run on `node --test`, which
-ships with Node.
+No build system — no `package.json`, no npm dependencies. Tests run on `node --test`, which
+ships with Node. `--update` and `--adopt` shell out to `git` for the three-way merge and for
+reading this repo's history; nothing else does.
 
 ## Install
 
@@ -27,23 +28,70 @@ Then merge the `PostToolUse` block from `settings.example.json` into your
 
 ### Per project
 
-Copies into `<project>/.claude/`, pinning a self-contained set the project can commit. Use
-this where the config has to travel with the code: a repo a collaborator clones, or an
-analysis whose results must be reproducible from a container.
+Copies into `<project>/.claude/`, and records what it copied. Use this where the config has
+to travel with the code, or where the project will change it: a repo a collaborator clones,
+an analysis that must be reproducible from a container, a devcontainer that cannot see your
+`~/.claude` at all.
 
 ```bash
 node install.js --project ../my-analysis --apply
 ```
 
 Guide links in `CLAUDE.md` are rewritten from `~/.claude/guides/` to `.claude/guides/` so
-they resolve inside the project. Copies drift from this repo by design — that is the trade
-for pinning.
+they resolve inside the project. Beside the copies it writes two things:
 
-### Both are safe by default
+| Path | What it is |
+|---|---|
+| `.claude/.claude-config.json` | where this came from, and at which commit |
+| `.claude/.baseline/<file>` | a pristine copy of exactly what was written |
+
+The baseline is what turns a later update into a three-way merge instead of an overwrite.
+Whether the project commits `.claude/` is its own business — both work the same either way.
+
+### Updating a project that has changed the copies
+
+```bash
+node install.js --update ../my-analysis          # dry run
+node install.js --update ../my-analysis --apply
+```
+
+Baseline is the common ancestor, the project's file is ours, this repo's file is theirs.
+Project edits survive, upstream changes arrive, and anything genuinely contested comes back
+as conflict markers — nothing picks a side quietly. A file the project deleted stays
+deleted; a file it edited with no baseline is skipped, not guessed at; a file this repo has
+dropped is reported and left in place.
+
+### Adopting a project that predates all this
+
+A project with a config copied by hand years ago has no baseline. `--adopt` reconstructs
+one: for each file it searches **this repo's own history** for the version the project's
+copy most resembles, and merges against that.
+
+```bash
+node install.js --adopt ../my-analysis           # shows the base it found for each file
+node install.js --adopt ../my-analysis --apply
+```
+
+The dry run prints the base commit, how many lines the project's copy differs from it, and
+what the merge would do — because a three-way merge against a wrong base loses content with
+no marker to show for it, so the guess is yours to accept. A base more than half different
+from the project's file is not an ancestor; adopt says so and refuses to merge it without
+`--force`, installing the current file untouched instead so the old one can be ported by
+hand.
+
+It also reports what it will *not* touch: files under the project's `.claude/` that this
+repo does not ship, split into stale copies of things we once shipped (safe to delete),
+forks of them (a judgement call), and the project's own work (keep). Guides still at the
+old `CLAUDE_<name>.md` root path are found, merged into `.claude/guides/`, and left in
+place for you to delete.
+
+### All of them are safe by default
 
 Nothing is written without `--apply`. A real file already in place is skipped unless
-`--force`, which renames it to a timestamped backup first. Only paths this repo owns are
-touched; `settings.json`, transcripts, and everything else in `~/.claude` are left alone.
+`--force`, which renames it to a timestamped backup first — in project mode too, so a first
+install cannot eat a `CLAUDE.md` the project wrote. Merges back up what they replace. Only
+paths this repo owns are touched; `settings.json`, transcripts, and everything else in
+`~/.claude` are left alone.
 
 ## What's here
 
@@ -85,9 +133,16 @@ session. Adding a file type is one entry in `RULES` plus a test.
 node --test test/*.test.js
 ```
 
-No install, no dependencies. The suite covers the dispatch table and every failure path, and
-checks every agent's frontmatter — the regression test for a real bug where all eight agents
-used the wrong schema, loaded silently as nothing, and no one noticed for months.
+No install, no npm dependencies. The suite covers the dispatch table and every failure path,
+and checks every agent's frontmatter — the regression test for a real bug where all eight
+agents used the wrong schema, loaded silently as nothing, and no one noticed for months.
+
+Vendoring is tested against real git fixtures: every update outcome (fast-forward, clean
+merge, conflict, a deletion the project meant, a file with no baseline), and adopt's search
+through history, including a guide renamed on its way into this repo. The weak-base
+threshold is a test of its own, pinned to the numbers measured on a real adoption — the
+guides that genuinely descend from ours sit at 23-38% divergence, the one rewritten from
+scratch at 79%.
 
 ## Credit
 
