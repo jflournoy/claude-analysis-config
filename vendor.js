@@ -54,13 +54,19 @@ function destFor(item, mode, root) {
 }
 
 /**
- * Guide links in CLAUDE.md are absolute (~/.claude/guides/...) because a global
- * CLAUDE.md is loaded from arbitrary working directories. A project copy keeps its
- * guides locally, so the links must be rewritten or they point at the global set.
+ * Links to this repo's own files are absolute (~/.claude/...) because a global
+ * install is loaded from arbitrary working directories. A project copy keeps those
+ * files locally, so the links must be rewritten or they point at the global set —
+ * or, where there is no global install, at nothing at all.
+ *
+ * Only paths this repo ships are rewritten. ~/.claude/projects/ is Claude Code's
+ * transcript directory, which stays where it is in either mode.
  */
 function rewriteGuidePaths(text, mode) {
   if (mode !== 'project') return text;
-  return text.split('~/.claude/guides/').join('.claude/guides/');
+  return text
+    .split('~/.claude/guides/').join('.claude/guides/')
+    .split('~/.claude/CLAUDE.md').join('CLAUDE.md');
 }
 
 /**

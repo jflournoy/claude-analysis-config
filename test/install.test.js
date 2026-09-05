@@ -69,6 +69,15 @@ describe('installer', () => {
       const s = 'see ~/.claude/guides/voice.md now';
       assert.strictEqual(rewriteGuidePaths(s, 'global'), s);
     });
+    it('rewrites the link to CLAUDE.md itself, which a project keeps at its root', () => {
+      assert.strictEqual(
+        rewriteGuidePaths('Read `~/.claude/CLAUDE.md` first', 'project'),
+        'Read `CLAUDE.md` first');
+    });
+    it('leaves ~/.claude paths that are not payload alone', () => {
+      const s = 'transcripts under ~/.claude/projects/';
+      assert.strictEqual(rewriteGuidePaths(s, 'project'), s);
+    });
   });
 
   describe('global install', () => {

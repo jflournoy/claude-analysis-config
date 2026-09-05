@@ -1,7 +1,9 @@
-# CLAUDE.md — Global AI Guidelines
+# CLAUDE.md — AI Guidelines
 
-> **Note to Claude:** This file lives at `~/.claude/CLAUDE.md` and is loaded in **every**
-> project. It holds rules that apply to all work. For task-specific guidance, consult the guides listed at the bottom (TDD, standards, Bayesian modeling, writing voice). Load them based on what you're working on—don't assume you need everything.
+> **Note to Claude:** This file holds rules that apply to all work in scope for it — every
+> project when it is installed globally, this project alone when it is vendored into one. For
+> task-specific guidance, consult the guides listed at the bottom (TDD, standards, Bayesian
+> modeling, writing voice). Load them based on what you're working on—don't assume you need everything.
 
 ## Critical Rules (Always Apply)
 
