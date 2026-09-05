@@ -97,6 +97,114 @@ log-scale form when you need to exclude `sigma = 0` — it rescues variance comp
 would otherwise collapse. Scale it to your data; `normal(0, 0.5)` on the log scale is fairly
 informative and centred on `sigma ≈ 1`.
 
+## Weakly informative priors, informed inits
+
+Both exist to make a hard posterior samplable, and both are ways a fit that looks clean ends up
+reporting your own assumptions back to you. They are not the same kind of object: a prior is
+part of the model and is allowed to move the posterior; an init is a search heuristic and is
+not. They are checked differently, and conflating them is the failure mode.
+
+**A prior is weakly informative only relative to a scale.** `normal(0, 5)` is vague on a
+standardized predictor and nearly flat nonsense on raw dollars. Set the scale from the units
+the parameter is actually in, then check what the prior implies about the *outcome* by drawing
+from the prior predictive. If it simulates reaction times of ten thousand seconds, the prior is
+not uninformative, it is wrong.
+
+**Flat is not neutral.** An improper flat prior on a constrained or hierarchical parameter
+hands the sampler heavy tails to explore and funnels that never close; on the hand-rolled
+Cholesky factor under Correlation matrices below it gives an improper posterior outright,
+measured. The prior that makes a difficult model fit is the one that rules out the absurd and
+leaves everything the data can speak to.
+
+**Stan's default init is `U(-2, 2)` on the unconstrained scale, not on yours** `[L]`. For
+`real<lower=0> sigma` that is `sigma` in `[0.135, 7.39]`; for a `cholesky_factor_corr` it is an
+arbitrary rotation. When the data pin `sigma` near 0.01, every chain starts where the gradient
+is enormous and warmup is spent crawling back — or the sampler rejects initial values and gives
+up. Informed inits start where the answer plausibly is. In increasing order of cost: moments of
+the data for location and scale parameters, `mod$optimize()`, `mod$pathfinder()`, or the
+previous run's draws. Stage 4 covers warm starts, Stage 6 Pathfinder.
+
+### Checking that neither one is doing the work
+
+|  | Prior | Init |
+|---|---|---|
+| What it is | part of the model | a search heuristic |
+| May move the posterior | yes, by design | never |
+| What a problem here hides | the data were not overwhelming | a second mode |
+| How you check it | power-scaling sensitivity | dispersed starts, R̂ across chains |
+
+**An init that changes the answer has told you about the posterior, not the sampler.** If
+informed and default inits land in different places, you have multimodality or
+non-identification, and the informed init hid it by starting every chain in the same basin.
+`init = <CmdStanMCMC>` and `init = <CmdStanPathfinder>` are safe here: cmdstanr writes one init
+file per chain and the values differ — from a fit, `mu` = 3.253, 3.380, 2.860, 3.122; from a
+pathfinder, 2.927, 3.167, 2.800, 2.952 `[M]`. What is not safe is `init = list(one_point)`
+recycled across chains, which starts every chain in the same place and makes R̂ blind to a
+second mode. When a model needed informed inits to converge at all, confirm once from dispersed
+or default starts that it reaches the same posterior, and record that you did.
+
+**Then ask how much of the posterior is prior.** Power-scaling raises the prior — or the
+likelihood — to a power α and measures how far the posterior moves, reusing the draws you
+already have via importance sampling, so it costs no refits (Kallioinen et al. 2024) `[L]`.
+
+The model has to expose two quantities, and one of them you are already writing for LOO:
+
+```stan
+generated quantities {
+  vector[N] log_lik;
+  real lprior = normal_lpdf(mu | 0, 2.5)
+              + normal_lpdf(tau | 0, 1)
+              + normal_lpdf(sigma | 0, 1);
+  for (n in 1:N) log_lik[n] = normal_lpdf(y[n] | alpha[gg[n]], sigma);
+}
+```
+`[C]` — compiled as part of a complete hierarchical program under stanc3 2.38.0.
+
+**Name it `lprior`.** `powerscale_sensitivity()` defaults to `log_prior_name = "lprior"` and
+`log_lik_name = "log_lik"` `[M]`; a variable called `log_prior` is simply not found. That is
+brms's name for it, which is why a brms fit needs nothing extra.
+
+Two more things about that block. Truncation and normalizing constants can be left out — they
+shift `lprior` by a constant, and a constant cancels in the self-normalized importance weights.
+And `z ~ std_normal()` in a non-centered parameterization is deliberately **not** in `lprior`:
+it is structure, not a prior you are testing, and power-scaling it rescales the shrinkage you
+built on purpose. Put in `lprior` only what you would want interrogated.
+
+```r
+library(priorsense)             # [M] priorsense 1.2.0
+powerscale_sensitivity(fit)     # one row per variable
+```
+
+```text
+  variable     prior likelihood                     diagnosis
+1       mu 0.3400363  0.4706065 potential prior-data conflict
+2    sigma 0.2789211  0.5093180 potential prior-data conflict
+```
+`[M]` — priorsense's own `example_powerscale_model("univariate_normal")`, 4 chains.
+
+Read the two columns together. The `diagnosis` column is exactly this rule, taken from the
+package source `[M]`, against `sensitivity_threshold = 0.05`:
+
+| prior | likelihood | `diagnosis` | What it means |
+|---|---|---|---|
+| below | below | `-` | nothing flagged |
+| below | at or above | `-` | the ordinary case — the data are overwhelming |
+| above | below | `potential strong prior / weak likelihood` | the prior is doing the work |
+| at or above | at or above | `potential prior-data conflict` | they disagree; the posterior splits the difference |
+
+Note what the rule does *not* flag: low sensitivity to both is reported as `-`, not as a
+problem. A parameter the data cannot see and the prior barely constrains reads the same as a
+healthy one here, so this check does not replace the diagnostic gate above.
+
+The defaults are `lower_alpha = 0.99`, `upper_alpha = 1.01`, `div_measure = "cjs_dist"` `[M]` —
+a ±1% perturbation, so what you get is a local derivative at α = 1, not the effect of throwing
+the prior away. It answers "is the posterior leaning on this", not "what would happen without
+it".
+
+`powerscale_sequence()` with `powerscale_plot_dens()` shows the whole α trajectory when one
+number is not enough to see what is moving, and `create_priorsense_data()` is the explicit
+route when your variables are named something else.
+
 ## Non-centered parameterization
 
 The standard fix for hierarchical funnels. Rather than sampling `theta ~ normal(mu, sigma)`
@@ -669,6 +777,15 @@ The container has no cmdstanpy, so **every Python driver call remains `[D]`** �
 against cmdstanpy 1.3.0 source, never executed. Every R driver call in this guide was
 executed in the container.
 
+**Power-scaling was verified separately, 2026-09-05.** priorsense is not installed in
+`jflournoy/verse-cmdstan-hcpd`; it was installed into a throwaway container at **1.2.0** and
+run there. `powerscale_sensitivity()` on the package's own
+`example_powerscale_model("univariate_normal")` produced the table shown; the `diagnosis`
+rule, `sensitivity_threshold = 0.05`, `lower_alpha`/`upper_alpha` and `div_measure` defaults
+were read from the function source and signature rather than from the documentation. The
+per-chain init values were measured in the same image under cmdstanr. The `generated
+quantities` block was compiled by stanc3 2.38.0 on the host, as a complete program.
+
 **Executed R API surface** (cmdstanr 0.8.0 / CmdStan 2.35.0), with what was observed:
 
 | Call | Observed |
@@ -766,5 +883,7 @@ the work. Promoting `[D]` to `[M]` without measuring is how a guide starts lying
   *Bayesian Analysis* 16:667–718
 - Vehtari, Gelman & Gabry (2017) — practical Bayesian model evaluation using LOO and WAIC
 - Bürkner, Gabry & Vehtari (2020) — approximate leave-future-out CV for time series
+- Kallioinen, Paananen, Bürkner & Vehtari (2024) — detecting and diagnosing prior and
+  likelihood sensitivity with power-scaling, *Statistics and Computing* 34:57
 - Yao et al. (2018) — stacking vs BMA
 - Zhang et al. (2022) — Pathfinder algorithm
