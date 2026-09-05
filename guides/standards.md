@@ -59,7 +59,7 @@
 
 - Test coverage: 60% minimum
 - Documentation: All features documented
-- Error handling: Graceful failures with clear messages
+- Error handling: Fail fast with clear error messages — no silent fallbacks that hide problems (see the NO SILENT FALLBACKS rule in `CLAUDE.md`)
 - Performance: Monitor code complexity and file sizes
 - ALWAYS use atomic commits
 - Use emojis judiciously
