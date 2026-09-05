@@ -5,10 +5,6 @@ reviewer agents, and a hook that routes edited files to the reviewer that fits t
 reproducible statistical analysis in R, Stan and Python, where the deliverable is a published
 number and the bug that matters is the one that does not crash.
 
-Plain Node, plus `git` for two of the commands: tests run on `node --test`, which ships with
-Node, and `--update` and `--adopt` shell out to `git` for the three-way merge and for reading
-this repo's history.
-
 ## Install
 
 Two ways, and the choice is per project.
