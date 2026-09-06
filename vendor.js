@@ -74,12 +74,22 @@ function rewriteGuidePaths(text, mode) {
  * Normalising those links to the current layout before a merge keeps the diff
  * about content rather than about paths.
  */
-function rewriteLegacyLinks(text) {
+function rewriteLegacyLinks(text, repo = __dirname) {
   let out = text;
   for (const [current, legacy] of Object.entries(LEGACY_GUIDE_NAMES)) {
     out = out.split(`CLAUDE_${legacy}.md`).join(`.claude/guides/${current}.md`);
   }
-  return out.replace(/CLAUDE_([a-z0-9-]+)\.md/g, '.claude/guides/$1.md');
+  // Only names this repo actually ships as guides. A project's own CLAUDE_spec.md
+  // is not ours to move, and rewriting its link points at a file nobody will write.
+  let shipped;
+  try {
+    shipped = fs.readdirSync(path.join(repo, 'guides'))
+      .filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3));
+  } catch { shipped = Object.keys(LEGACY_GUIDE_NAMES); }
+  for (const name of shipped) {
+    out = out.split(`CLAUDE_${name}.md`).join(`.claude/guides/${name}.md`);
+  }
+  return out;
 }
 
 /** The body as it would be written into a project, links and all. */

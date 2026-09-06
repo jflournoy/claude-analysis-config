@@ -59,6 +59,19 @@ describe('installer', () => {
     });
   });
 
+  describe('rewriteLegacyLinks', () => {
+    const { rewriteLegacyLinks } = require('../vendor.js');
+    it('rewrites a legacy link to a guide this repo ships', () => {
+      assert.strictEqual(rewriteLegacyLinks('see CLAUDE_tdd.md'), 'see .claude/guides/tdd.md');
+      assert.strictEqual(rewriteLegacyLinks('see CLAUDE_r-devel.md'),
+        'see .claude/guides/r-development.md');
+    });
+    it('leaves a project\'s own CLAUDE_<name>.md alone', () => {
+      const s = 'see CLAUDE_spec.md and CLAUDE_project-spec.md';
+      assert.strictEqual(rewriteLegacyLinks(s), s);
+    });
+  });
+
   describe('rewriteGuidePaths', () => {
     it('rewrites absolute guide links for a project install', () => {
       assert.strictEqual(
