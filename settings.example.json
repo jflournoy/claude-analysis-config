@@ -56,7 +56,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$HOME/.claude/hooks/reviewer-dispatch.js\"",
+            "command": "node \"$HOME/.claude/hooks/reviewer-dispatch.cjs\"",
             "timeout": 10
           }
         ]

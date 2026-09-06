@@ -126,7 +126,7 @@ See [~/.claude/guides/workflow.md](~/.claude/guides/workflow.md) for full collab
 
 ## Review Agents
 
-Two fire automatically. A `PostToolUse` hook (`hooks/reviewer-dispatch.js`) routes an
+Two fire automatically. A `PostToolUse` hook (`hooks/reviewer-dispatch.cjs`) routes an
 edited file to its reviewer:
 
 | Edited | Agent |

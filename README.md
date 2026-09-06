@@ -106,7 +106,7 @@ Loaded on demand — `CLAUDE.md` says when.
 
 ### Reviewer agents
 
-Two fire automatically. `hooks/reviewer-dispatch.js` reads the edited path and names the
+Two fire automatically. `hooks/reviewer-dispatch.cjs` reads the edited path and names the
 agent to run:
 
 | Edited | Agent |

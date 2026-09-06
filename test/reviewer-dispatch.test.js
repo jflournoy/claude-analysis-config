@@ -2,8 +2,10 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
 
-const HOOK = path.join(__dirname, '..', 'hooks', 'reviewer-dispatch.js');
+const HOOK = path.join(__dirname, '..', 'hooks', 'reviewer-dispatch.cjs');
 const { agentFor, filePathFrom, buildOutput, RULES } = require(HOOK);
 
 const run = (stdin, env = {}) =>
@@ -83,6 +85,21 @@ describe('reviewer dispatch', () => {
     });
     it('returns null when nothing matches', () => {
       assert.strictEqual(buildOutput({ tool_input: { file_path: '/a.txt' } }), null);
+    });
+  });
+
+  describe('runs inside an ESM project', () => {
+    it('still dispatches when the host package.json says type: module', () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'esm-host-'));
+      fs.writeFileSync(path.join(dir, 'package.json'), '{"type":"module"}');
+      const copy = path.join(dir, path.basename(HOOK));
+      fs.copyFileSync(HOOK, copy);
+      const out = execFileSync('node', [copy], {
+        input: JSON.stringify({ tool_name: 'Edit', tool_input: { file_path: 'a.R' } }),
+        encoding: 'utf8'
+      });
+      fs.rmSync(dir, { recursive: true, force: true });
+      assert.match(out, /r-analysis-reviewer/);
     });
   });
 
