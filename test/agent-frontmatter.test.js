@@ -6,26 +6,9 @@ const path = require('node:path');
 const AGENT_DIR = path.join(__dirname, '..', 'agents');
 const HOOK = path.join(__dirname, '..', 'hooks', 'reviewer-dispatch.cjs');
 const { RULES } = require(HOOK);
+const { parseFrontmatter } = require('./frontmatter.js');
 
 const agentFiles = fs.readdirSync(AGENT_DIR).filter((f) => f.endsWith('.md'));
-
-/**
- * Minimal frontmatter parse. Deliberately strict about the delimiters: the bug this
- * suite exists to prevent was a closing `---` glued onto the last key, which left the
- * block unterminated and silently stopped the agent loading.
- */
-function parseFrontmatter(text) {
-  const lines = text.split('\n');
-  if (lines[0] !== '---') return { error: 'file does not open with --- on its own line' };
-  const end = lines.indexOf('---', 1);
-  if (end === -1) return { error: 'no closing --- on its own line' };
-  const fields = {};
-  for (const line of lines.slice(1, end)) {
-    const m = line.match(/^([A-Za-z][\w-]*):\s*(.*)$/);
-    if (m) fields[m[1]] = m[2].trim();
-  }
-  return { fields };
-}
 
 describe('agent frontmatter', () => {
   it('finds agent files to check', () => {
