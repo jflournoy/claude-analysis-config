@@ -38,6 +38,8 @@ the reasons behind the rules, the patterns, and runnable examples, see
 | `quarto` | Rendering reports; needs the Quarto CLI on the PATH |
 | `parallel` | Multicore, base R |
 | `crew` / `crew.cluster` | Where targets run: local workers, or a scheduler |
+| `cmdstanr` | The only sampling backend |
+| `posterior` | Draws and summaries from any Bayesian fit — not rstan |
 
 No tidyverse packages (dplyr, purrr, tidyr, readr, tibble, forcats). No fst. Justify anything
 not on this list before using it.
@@ -165,8 +167,6 @@ assignment to a new name does nothing to prevent it.
 | `scico`, `viridisLite` | Continuous colour scales |
 | `digest` | Salted hashing, e.g. SHA-256 for deidentification |
 | `brms` | Bayesian model specification, cmdstanr backend |
-| `cmdstanr` | The only sampling backend |
-| `posterior` | Draw extraction and summaries — not rstan |
 | `igraph` | Graph layout only; drawing stays in ggplot2 |
 
 ## Bayesian models: fit with cmdstanr, read with posterior
