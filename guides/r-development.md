@@ -21,12 +21,12 @@ project that has already committed to something else says so in its own `CLAUDE.
 | `ggplot2` | All visualization |
 | `scico`, `viridisLite` | Continuous colour scales |
 | `stringr` / `stringi` | String operations |
-| `arrow` | Feather and parquet I/O, lazy datasets |
+| `arrow` | Parquet I/O, lazy datasets |
 | `duckdb` | Out-of-core SQL |
 | `lubridate` | Heavy date/time work only |
 | `digest` | Salted hashing, e.g. SHA-256 for deidentification |
 | `here` | Project-relative paths in scripts and tests |
-| `S7` | OOP in new packages |
+| `S7` | OOP in new packages — experimental, breaking changes possible |
 | `testthat` | Unit testing |
 | `targets` | Pipeline management |
 | `parallel` | Multicore, base R |
@@ -43,8 +43,11 @@ not on this list before using it.
 
 - `snake_case` throughout — variables are nouns, functions are verbs
 - Intermediate variables over chains; the name is free documentation
+- Assumes R ≥ 4.1: `|>` is native, and `\(x)` is `function(x)`. Either spelling is fine for a
+  one-liner
 - Validate inputs at user-facing boundaries; skip internal validation
-- `fcase()` / `fifelse()`, not `case_when()` / `if_else()`
+- `fcase()` / `fifelse()`, not `case_when()` / `if_else()` — and not `ifelse()`, which is not
+  type-stable
 - `rbindlist()`, not `bind_rows()`
 - `melt()` / `dcast()`, not `pivot_longer()` / `pivot_wider()`
 - `merge()`, not `left_join()`
@@ -78,11 +81,40 @@ not on this list before using it.
 
 ## Data I/O
 
-- Read a CSV once with `fread()`, then write feather (working) or parquet (persistent/shared)
+- Read a CSV once with `fread()`, then write parquet
 - Never re-read a CSV in an iterative workflow
-- `write_feather()` / `read_feather()` for working data
-- `write_parquet()` / `read_parquet()` for anything that persists or gets shared
+- `write_parquet()` / `read_parquet()` for everything — working, persistent, and shared
 - Wrap in `as.data.table()` after reading back from arrow
+
+One format, not two. Parquet is the best-supported intermediate format there is, and a
+"working" file has a way of becoming the shared one.
+
+## Large data and parallelism
+
+- `fread(select = ...)` to read only the columns you need
+- `setkey()` before repeated subsetting or joining; `setindex()` when sorting is unwanted
+- With a secondary index, `on =` is **required** — `dt[.("x")]` with no key and no `on=`
+  raises an error, it does not fall back to a scan
+- `mclapply()` forks, which is **unstable inside RStudio and Positron on macOS** — run from
+  a terminal, or use `parLapply()` with a socket cluster. `parLapply()` is also the only
+  option on Windows
+- **`mc.set.seed = TRUE` is already the default and is not reproducible** — under the default
+  RNG it seeds children from time and PID. For reproducible `mclapply()`, either
+  `set.seed(i)` inside the worker keyed on the item, or `RNGkind("L'Ecuyer-CMRG")` before
+  `set.seed()`. Use `clusterSetRNGStream()` for a socket cluster
+- Time one item with `system.time()` before parallelising anything
+- **Never chunk a CSV with `readLines()`.** Embedded newlines inside quoted fields are legal
+  (RFC 4180) and split the record. Use `arrow::open_dataset()` and collect in batches
+- `duckdb` for out-of-core work, queried with SQL — no dplyr verbs
+
+## Reference semantics: know whose object you are modifying
+
+`dt2 <- dt` does not copy. `:=` inside a function modifies the caller's data.table, and
+assignment to a new name does nothing to prevent it.
+
+- Call `copy()` at a function boundary when the caller's object must survive the call
+- Where in-place mutation *is* the contract, say so in the function name and its tests
+- `setDT()` converts in place, so the original name is also converted
 
 ## Bayesian models: fit with cmdstanr, read with posterior
 

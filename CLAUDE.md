@@ -148,7 +148,8 @@ All of them report findings and never edit. Silence them for a session with
 
 - [~/.claude/guides/r-development.md](~/.claude/guides/r-development.md) — Writing R:
   data.table over tidyverse, targets pipelines, testthat with reference semantics
-  - Covers: approved packages, the tidyverse→data.table substitution table, arrow I/O
+  - Covers: approved packages, the tidyverse→data.table substitution table, parquet I/O,
+    large-data and parallelism gotchas, and who owns the object `:=` just modified
   - Includes the cmdstanr/posterior rule: the rstan-backed brms accessors can hard-crash
     R with SIGABRT in a container where rstan is broken
 
