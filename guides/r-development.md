@@ -71,6 +71,8 @@ not on this list before using it.
   so a test that passes `dt` and then reuses it is testing a mutated object. Pass `copy(dt)`
   where that matters, and assert the mutation where it is the contract
 - Tests in `tests/test-*.R`; run with `testthat::test_dir("tests/")`
+- Source the code under test with `here::here()`: `test_dir()` runs with the working
+  directory set to `tests/`, so a path relative to the project root does not resolve
 
 ## Pipelines
 
@@ -78,6 +80,9 @@ not on this list before using it.
 - Keep `_targets.R` thin: one function call per `tar_target()`
 - All logic in functions under `R/`, tested with testthat
 - Track input files with `format = "file"` so targets notices changes on disk
+- Branching over a list needs `iteration = "list"` on both the list target and the
+  branched target; a downstream target receives every branch by naming the upstream
+  target, never via `tar_read()` inside a command
 
 ## Data I/O
 
