@@ -122,7 +122,8 @@ See [~/.claude/guides/workflow.md](~/.claude/guides/workflow.md) for full collab
   on Bayesian models, Stan code, MCMC diagnostics, or time-series inference
   - Covers: Kalman filters, Pathfinder, reparameterization, correlation-matrix priors,
     regularized horseshoe, warm-starting, R̂/ESS thresholds
-  - Stan snippets are compile-checked; the R (cmdstanr) and Python (cmdstanpy) calls differ
+  - Every Stan fence is compiled by `node check-stan.js`; the R (cmdstanr) and Python
+    (cmdstanpy) calls differ
 
 ## Review Agents
 

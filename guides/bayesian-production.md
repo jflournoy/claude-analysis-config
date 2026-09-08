@@ -13,7 +13,7 @@ what will not:
 | Marker | Means |
 |---|---|
 | `[M]` | **Measured** — this number came from running it; see Provenance for the setup |
-| `[C]` | **Compiles** — verified with `stanc` under the toolchain in Provenance |
+| `[C]` | **Compiles** — every `stan` fence in this file is compiled by `check-stan.js` (see Provenance) |
 | `[D]` | **Documented** — checked against library docs or source, *not executed* |
 | `[L]` | **Literature** — from the cited reference |
 
@@ -47,6 +47,10 @@ Two consequences worth internalizing:
   every element is written to the CSV for every draw. If an intermediate is only needed to
   build the log density, declare it in a local block inside `model` instead:
 
+<!-- stan: with
+data { int<lower=0> N; int<lower=0> K; matrix[N, K] X; array[N] int<lower=0, upper=1> y; }
+parameters { vector[K] beta; }
+-->
 ```stan
 model {
   profile("likelihood") {
@@ -67,18 +71,25 @@ else to get a well-behaved positive parameter.
 
 **Stan has no `half_normal`.** This is a compile error, not a runtime surprise:
 
+<!-- stan: error="half_normal_lpdf" -->
+```stan
+parameters { real<lower=0> sigma; }
+model      { sigma ~ half_normal(0, 0.1); }   // does not compile
+```
+
 ```text
 Ill-typed arguments to "~"-statement. No function "half_normal_lpdf" was found
 when looking for distribution "half_normal".
 ```
-`[C]` — this is the literal `stanc` output, not a paraphrase.
+`[C]` — this is the literal `stanc` output, not a paraphrase, and the checker asserts that
+the program above fails with it.
 
 A half-normal is a `<lower=0>` declaration plus `normal(0, s)`. Stan drops the truncation
 constant, which does not affect sampling:
 
 ```stan
-real<lower=0> sigma;
-sigma ~ normal(0, 0.1);   // this is half-normal(0, 0.1)
+parameters { real<lower=0> sigma; }
+model      { sigma ~ normal(0, 0.1); }   // this is half-normal(0, 0.1)
 ```
 
 **Sampling on the log scale is a prior choice, not a speed trick.** Since `<lower=0>` already
@@ -149,6 +160,10 @@ already have via importance sampling, so it costs no refits (Kallioinen et al. 2
 
 The model has to expose two quantities, and one of them you are already writing for LOO:
 
+<!-- stan: with
+data { int<lower=1> N; int<lower=1> J; array[N] int<lower=1, upper=J> gg; vector[N] y; }
+parameters { real mu; real<lower=0> tau; real<lower=0> sigma; vector[J] alpha; }
+-->
 ```stan
 generated quantities {
   vector[N] log_lik;
@@ -158,7 +173,8 @@ generated quantities {
   for (n in 1:N) log_lik[n] = normal_lpdf(y[n] | alpha[gg[n]], sigma);
 }
 ```
-`[C]` — compiled as part of a complete hierarchical program under stanc3 2.38.0.
+`[C]` — compiled as part of a complete hierarchical program; the declarations it needs are in
+the source of this file, beside the block.
 
 **Name it `lprior`.** `powerscale_sensitivity()` defaults to `log_prior_name = "lprior"` and
 `log_lik_name = "log_lik"` `[M]`; a variable called `log_prior` is simply not found. That is
@@ -210,6 +226,9 @@ route when your variables are named something else.
 The standard fix for hierarchical funnels. Rather than sampling `theta ~ normal(mu, sigma)`
 directly, sample a standard normal and rescale:
 
+<!-- stan: with
+data { int<lower=1> K; }
+-->
 ```stan
 parameters        { real mu; real<lower=0> sigma; vector[K] z; }
 transformed parameters { vector[K] theta = mu + sigma * z; }
@@ -334,6 +353,10 @@ itself mixes fine.
 
 ## Vectorization is idiom, not just speed
 
+<!-- stan: in=model with
+data { int<lower=0> N; vector[N] y; vector[N] mu; }
+parameters { real<lower=0> sigma; }
+-->
 ```stan
 for (n in 1:N) y[n] ~ normal(mu[n], sigma);   // avoid
 y ~ normal(mu, sigma);                        // prefer
@@ -347,6 +370,10 @@ want while sampling. When you need the true log density — for `log_lik` in
 `generated quantities`, say — use the `_lpdf` form. `target += normal_lupdf(...)` is the
 explicit "drop constants" version and matches `~`.
 
+<!-- stan: with
+data { int<lower=0> N; vector[N] y; vector[N] mu; }
+parameters { real<lower=0> sigma; }
+-->
 ```stan
 model      { y ~ normal(mu, sigma); }                         // constants dropped
 generated quantities {
@@ -444,6 +471,10 @@ Most people optimize the wrong thing. Two measurements decide which lever to pul
 **Where in the model does time go?** Stan has built-in profiling `[C]`. Wrap suspect
 regions:
 
+<!-- stan: with
+data { int<lower=0> N; int<lower=0> K; matrix[N, K] X; array[N] int<lower=0, upper=1> y; }
+parameters { vector[K] z; real<lower=0> sigma; vector[K] beta; }
+-->
 ```stan
 model {
   profile("priors") {
@@ -518,6 +549,10 @@ Check ESS after cutting, not before.
 **Vectorize.** The loop and the vectorized form compute the same number, but the loop builds
 N separate autodiff nodes:
 
+<!-- stan: in=model with
+data { int<lower=0> N; vector[N] y; vector[N] mu; }
+parameters { real<lower=0> sigma; }
+-->
 ```stan
 for (n in 1:N) y[n] ~ normal(mu[n], sigma);   // N nodes
 y ~ normal(mu, sigma);                        // one
@@ -528,8 +563,17 @@ y ~ normal(mu, sigma);                        // one
 
 **Use the GLM primitives.** These have hand-written analytic gradients instead of autodiff
 through the composed expression, and they are often the single largest per-gradient win.
-Both compile under 2.38 `[C]`:
+Both compile `[C]`:
 
+<!-- stan: in=model with
+data {
+  int<lower=0> N; int<lower=1> K; int<lower=2> C;
+  matrix[N, K] x;
+  array[N] int<lower=1, upper=C> y;
+  array[N] int<lower=0, upper=1> yb;
+}
+parameters { vector[K] beta; ordered[C - 1] cut; real alpha; }
+-->
 ```stan
 y  ~ ordered_logistic_glm(x, beta, cut);   // ordinal outcomes - IRT, Likert
 yb ~ bernoulli_logit_glm(x, alpha, beta);  // binary outcomes
@@ -547,14 +591,22 @@ This can cut N by an order of magnitude with no change to the posterior.
 
 ## Stage 3 — Structural, still exact
 
-**Within-chain threading with `reduce_sum`.** Available in 2.38 `[C]`. Partition the data
-sum across threads:
+**Within-chain threading with `reduce_sum`.** `[C]`. Partition the data sum across threads:
 
 ```stan
 functions {
   real partial(array[] real slice_y, int start, int end, vector mu, real sigma) {
     return normal_lpdf(to_vector(slice_y) | mu[start:end], sigma);
   }
+}
+data {
+  int<lower=0> N;
+  array[N] real y;
+  int<lower=1> grainsize;
+}
+parameters {
+  vector[N] mu;
+  real<lower=0> sigma;
 }
 model {
   target += reduce_sum(partial, y, grainsize, mu, sigma);
@@ -764,6 +816,14 @@ Worth considering only when you will run inference very many times.
 ---
 
 ## Provenance and re-verification
+
+**Every `stan` fence compiles, mechanically.** `node check-stan.js` (in the repository that
+ships this guide) extracts each fence, adds the declarations recorded in an HTML comment
+beside it where a snippet is a fragment, compiles the result with `stanc`, and prints the
+`stanc` version it used. The one block that is supposed to fail, `half_normal`, is asserted
+to fail with the message quoted above. The test suite runs the same check wherever a
+CmdStan install is found, and skips loudly where none is. So `[C]` is current as of the
+last time the tests passed, not as of the date below.
 
 **Verified 2026-09-03** in two environments. Claims that hold in both are version-robust
 across at least CmdStan 2.35–2.38.

@@ -34,6 +34,7 @@
 !install.js
 !vendor.js
 !sync-r-guide.js
+!check-stan.js
 
 # --- Machine-local tooling: re-ignored after the allowlist ---
 # vexp hardcodes this machine's extension path and regenerates on every update.

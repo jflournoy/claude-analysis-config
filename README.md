@@ -99,7 +99,7 @@ Loaded on demand — `CLAUDE.md` says when.
 
 | Guide | For |
 |---|---|
-| `guides/bayesian-production.md` | Writing competent Stan, and making it fast enough to run daily. Every claim carries its evidence class; verified against CmdStan 2.35 and 2.38 |
+| `guides/bayesian-production.md` | Writing competent Stan, and making it fast enough to run daily. Every claim carries its evidence class; every Stan fence is compiled by `node check-stan.js` |
 | `guides/voice.md` | Writing prose a reader sees, in the author's own register |
 | `guides/r-development.md` | data.table over tidyverse, targets, testthat; fit with cmdstanr and read with posterior, never the rstan-backed brms accessors |
 | `guides/tdd.md`, `guides/standards.md`, `guides/workflow.md` | Test discipline, code quality, collaboration |
@@ -111,6 +111,13 @@ verbatim between `r-core` markers and keeps its own additions (brms, running R, 
 outside them. `node sync-r-guide.js --check` reports drift against a sibling checkout at
 `../modern-r-dev`; a plain run takes the sibling's core. The test suite makes the same
 comparison where the sibling exists, and says so, loudly, where it does not.
+
+The Bayesian guide's `[C]` marker means "compiles", and `node check-stan.js` is what makes
+that true: it compiles every `stan` fence with `stanc`, adding the declarations recorded in an
+HTML comment beside any fragment, and asserts that the one block documented as a compile
+error fails with the quoted message. It finds `stanc` from `--stanc`, `$STANC`, `$CMDSTAN`,
+or the newest `~/.cmdstan/cmdstan-*`, and prints the version it used. The tests run the same
+check where a CmdStan install exists and skip loudly where none does.
 
 ### Reviewer agents
 
