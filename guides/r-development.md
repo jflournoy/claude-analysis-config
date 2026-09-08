@@ -1,7 +1,13 @@
+<!-- r-core: begin -->
+<!-- Shared core of the R guide. Canonical copy:
+     https://github.com/jflournoy/modern-base-r-dev/blob/main/CLAUDE_r-devel.md
+     claude-config vendors it verbatim between r-core markers via sync-r-guide.js. -->
 # R Development
 
 data.table and base R, not the tidyverse. The rules below are defaults for new work; a
-project that has already committed to something else says so in its own `CLAUDE.md`.
+project that has already committed to something else says so in its own `CLAUDE.md`. For
+the reasons behind the rules, the patterns, and runnable examples, see
+[the long guide](https://github.com/jflournoy/modern-base-r-dev/blob/main/R-dev-guide.md).
 
 ## Non-negotiable
 
@@ -10,7 +16,8 @@ project that has already committed to something else says so in its own `CLAUDE.
 - **Never load tidyverse** or any meta-package
 - **Base R** for anything data.table and the approved list do not cover
 - **`lapply()` + `rbindlist()`** as the default pattern for building tabular results
-- **Modify in place with `:=`** — do not copy a data.table when `dt[, col := ...]` will do
+- **Modify in place with `:=`** inside a function that owns its object; `copy()` at the
+  boundary when the caller's object must survive the call
 - **Write functions.** Name your transformations; do not chain anonymous steps
 
 ## Approved packages
@@ -19,22 +26,16 @@ project that has already committed to something else says so in its own `CLAUDE.
 |---|---|
 | `data.table` | All data manipulation |
 | `ggplot2` | All visualization |
-| `scico`, `viridisLite` | Continuous colour scales |
 | `stringr` / `stringi` | String operations |
 | `arrow` | Parquet I/O, lazy datasets |
 | `duckdb` | Out-of-core SQL |
 | `lubridate` | Heavy date/time work only |
-| `digest` | Salted hashing, e.g. SHA-256 for deidentification |
 | `here` | Project-relative paths in scripts and tests |
-| `S7` | OOP in new packages — experimental, breaking changes possible |
+| `S7` | OOP only with a written reason; S3 is the default. S7 is experimental |
 | `testthat` | Unit testing |
 | `targets` | Pipeline management |
 | `parallel` | Multicore, base R |
 | `crew` / `crew.cluster` | Parallel backends for targets |
-| `brms` | Bayesian model specification, cmdstanr backend |
-| `cmdstanr` | The only sampling backend |
-| `posterior` | Draw extraction and summaries — not rstan |
-| `igraph` | Graph layout only; drawing stays in ggplot2 |
 
 No tidyverse packages (dplyr, purrr, tidyr, readr, tibble, forcats). No fst. Justify anything
 not on this list before using it.
@@ -106,7 +107,9 @@ One format, not two. Parquet is the best-supported intermediate format there is,
 - **`mc.set.seed = TRUE` is already the default and is not reproducible** — under the default
   RNG it seeds children from time and PID. For reproducible `mclapply()`, either
   `set.seed(i)` inside the worker keyed on the item, or `RNGkind("L'Ecuyer-CMRG")` before
-  `set.seed()`. Use `clusterSetRNGStream()` for a socket cluster
+  `set.seed()`. Use `clusterSetRNGStream()` for a socket cluster whose workers do not seed
+  themselves; it switches them to L'Ecuyer-CMRG, so it does not combine with `set.seed(i)`
+  in the worker
 - Time one item with `system.time()` before parallelising anything
 - **Never chunk a CSV with `readLines()`.** Embedded newlines inside quoted fields are legal
   (RFC 4180) and split the record. Use `arrow::open_dataset()` and collect in batches
@@ -120,6 +123,18 @@ assignment to a new name does nothing to prevent it.
 - Call `copy()` at a function boundary when the caller's object must survive the call
 - Where in-place mutation *is* the contract, say so in the function name and its tests
 - `setDT()` converts in place, so the original name is also converted
+<!-- r-core: end -->
+
+## Also approved in this config
+
+| Package | Purpose |
+|---|---|
+| `scico`, `viridisLite` | Continuous colour scales |
+| `digest` | Salted hashing, e.g. SHA-256 for deidentification |
+| `brms` | Bayesian model specification, cmdstanr backend |
+| `cmdstanr` | The only sampling backend |
+| `posterior` | Draw extraction and summaries — not rstan |
+| `igraph` | Graph layout only; drawing stays in ggplot2 |
 
 ## Bayesian models: fit with cmdstanr, read with posterior
 
