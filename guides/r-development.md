@@ -84,6 +84,11 @@ not on this list before using it.
 - Branching over a list needs `iteration = "list"` on both the list target and the
   branched target; a downstream target receives every branch by naming the upstream
   target, never via `tar_read()` inside a command
+- Branch over the rows of a `CJ()` specification table with the default iteration; the
+  downstream target receives the one-row results already stacked
+- Where targets run is a `crew` controller, set once in `tar_option_set()`; the pipeline
+  does not change between a laptop, a scheduler, and a cloud batch service. With remote
+  workers set `storage = "worker"` and `retrieval = "worker"`
 
 ## Data I/O
 
@@ -94,6 +99,16 @@ not on this list before using it.
 
 One format, not two. Parquet is the best-supported intermediate format there is, and a
 "working" file has a way of becoming the shared one.
+
+## Joins and identifiers
+
+- Identifiers are character: `fread(..., colClasses = c(id = "character"))` at the read.
+  `fread()` otherwise guesses integer and drops leading zeros, and nothing fails until the
+  id has to match a file name or another table
+- State what a join must preserve and assert it: `nrow()` before and after, and
+  `!anyDuplicated()` on the many side's key. `dt_a[!dt_b, on = "id"]` shows what fell out
+- A key with two types errors in data.table, and that is the good case. The quiet cases are
+  a missing key (rows drop or go NA) and a duplicated key (rows multiply)
 
 ## Large data and parallelism
 
@@ -123,6 +138,22 @@ assignment to a new name does nothing to prevent it.
 - Call `copy()` at a function boundary when the caller's object must survive the call
 - Where in-place mutation *is* the contract, say so in the function name and its tests
 - `setDT()` converts in place, so the original name is also converted
+
+## Models
+
+- One extraction layer returns plain data.tables, one row per term (`tidy_coef()` and its
+  kin in `R/tidy.R`); reports, figures, and tests consume those, never the fit object
+- Draws come out of `posterior`, never out of the fitting package's own accessors
+
+## Reports
+
+- A Quarto report reads targets with `tar_read()` / `tar_load()`; it never fits a model or
+  reads a raw file
+- The report is a target, `tarchetypes::tar_quarto()`, so it cannot be stale relative to
+  the fit it shows
+- Strings a report emits (captions, model descriptions) come from tested functions, finding
+  first and mechanics after
+- `lightbox: true` on every HTML report: analysis figures are dense and unreadable inline
 <!-- r-core: end -->
 
 ## Also approved in this config
@@ -187,10 +218,3 @@ to run on a schedule — see `~/.claude/guides/bayesian-production.md`.
 - `Rscript path/to/script.R` lets `Rscript` be allow-listed once
 - Exception: a genuinely trivial one-liner such as `Rscript -e 'sessionInfo()'`. Anything that
   reads data or has logic goes in a file
-
-## Quarto HTML reports
-
-- **Enable lightbox on every HTML report** so figures are click-to-zoom:
-  `format: html: lightbox: true` in the format YAML. Applies to all images; built in since
-  Quarto 1.5, no extension needed. Analysis figures are usually dense and unreadable at inline
-  size, so this is the default rather than an opt-in.

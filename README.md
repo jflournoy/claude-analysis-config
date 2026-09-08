@@ -107,8 +107,8 @@ Loaded on demand — `CLAUDE.md` says when.
 The R guide has one shared core, kept in
 [modern-base-r-dev](https://github.com/jflournoy/modern-base-r-dev) as `CLAUDE_r-devel.md`
 beside the long guide whose examples are run on every push. This repo vendors that core
-verbatim between `r-core` markers and keeps its own additions (brms, running R, Quarto)
-outside them. `node sync-r-guide.js --check` reports drift against a sibling checkout at
+verbatim between `r-core` markers and keeps its own additions (the extra packages, brms,
+running R) outside them. `node sync-r-guide.js --check` reports drift against a sibling checkout at
 `../modern-r-dev`; a plain run takes the sibling's core. The test suite makes the same
 comparison where the sibling exists, and says so, loudly, where it does not.
 
