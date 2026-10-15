@@ -1,4 +1,8 @@
-# claude-config
+# claude-analysis-config
+
+Based on and inspired by Rebecca Murphey's
+[claude-setup](https://github.com/rmurphey/claude-setup) and
+[claude-config](https://github.com/rmurphey/claude-config); see [Credit](#credit).
 
 Personal [Claude Code](https://docs.claude.com/en/docs/claude-code) configuration: guides,
 reviewer agents, and a hook that routes edited files to the reviewer that fits them. Aimed at
