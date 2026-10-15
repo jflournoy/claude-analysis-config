@@ -129,9 +129,10 @@ agent to run:
 | `*.stan` | `stan-reviewer` — nan-filled matrices, parameters with no prior, dropped Jacobians, wasted cycles |
 | `*.R` `*.Rmd` `*.qmd` | `r-analysis-reviewer` — joins that lose rows, type coercion, unseeded RNG, stale caches |
 
-Four are on demand: `statistical-analysis-reviewer` (skeptical peer review before a result is
+Six are on demand: `statistical-analysis-reviewer` (skeptical peer review before a result is
 shared), `determinism-reviewer` (work the model is doing that code should), `voice-authenticator`
-(prose against the voice profile), `next-priorities`.
+(prose against the voice profile), `agent-auditor` (checks other agents for quality and
+correctness), `next-priorities`, and `usage-estimator`.
 
 All report findings and never edit. `CLAUDE_REVIEWER_DISPATCH=0` silences dispatch for a
 session. Adding a file type is one entry in `RULES` plus a test.
@@ -159,9 +160,12 @@ scratch at 79%.
 
 ## Credit
 
-The shape of this repo and several of its ideas come from Rebecca Murphey's
-[rmurphey/claude-config](https://github.com/rmurphey/claude-config); the copyright in
-[LICENSE](LICENSE) is hers. What came across:
+This repo began as a fork of Rebecca Murphey's
+[rmurphey/claude-setup](https://github.com/rmurphey/claude-setup), which is MIT-licensed;
+its history is still here, and [LICENSE](LICENSE) carries her copyright beside mine. The
+inherited files (`agent-auditor`, `next-priorities`, `usage-estimator`, and the commands)
+come from there. Several later ideas come from her
+[rmurphey/claude-config](https://github.com/rmurphey/claude-config). What came across:
 
 - **Reviewer agents that fire automatically** on a `PostToolUse` hook keyed to the edited
   file's type. The single best idea here.
