@@ -100,6 +100,11 @@ capture, `TodoWrite` and `gh` replace todo management, `/loop` and `/schedule` r
 monitoring, and `/code-review` and `/simplify` replace the quality commands. They were
 removed rather than maintained in parallel.
 
+## Skills
+
+- `research-report` — R output to an APA 7 write-up and plain-language deck bullets. Every
+  number is checked against the saved output by `check-report.js`, or computed inline in Quarto
+
 See [~/.claude/guides/workflow.md](~/.claude/guides/workflow.md) for full collaboration guidelines.
 
 ## When to Consult Each Guide

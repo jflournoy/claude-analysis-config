@@ -24,6 +24,11 @@
 !hooks/**
 !test/
 !test/**
+# Skills one by one, not skills/**: ~/.claude/skills also holds skills this repo
+# did not write, and a checkout as ~/.claude must not pick them up.
+!skills/
+!skills/research-report/
+!skills/research-report/**
 
 !CLAUDE.md
 !guides/

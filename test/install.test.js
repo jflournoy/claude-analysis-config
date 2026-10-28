@@ -25,6 +25,9 @@ beforeEach(() => {
   mk(path.join(repo, 'commands', 'go.md'), 'go');
   mk(path.join(repo, 'hooks', 'h.js'), '// hook');
   mk(path.join(repo, 'guides', 'voice.md'), 'craft');
+  mk(path.join(repo, 'skills', 'report', 'SKILL.md'), '---\nname: report\n---\n');
+  mk(path.join(repo, 'skills', 'report', 'check.js'), '// check');
+  mk(path.join(repo, 'skills', 'report', '.cache', 'junk'), 'junk');
   mk(path.join(repo, 'CLAUDE.md'), 'See [voice](~/.claude/guides/voice.md) for prose.\n');
   mk(path.join(repo, 'README.md'), 'not installed');
 });
@@ -32,11 +35,16 @@ afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
 
 describe('installer', () => {
   describe('payload', () => {
-    it('installs agents, commands, hooks, guides and CLAUDE.md', () => {
+    it('installs agents, commands, hooks, guides, skills and CLAUDE.md', () => {
       const rels = payload(repo).map((p) => p.rel).sort();
       assert.deepStrictEqual(rels, [
         'CLAUDE.md', 'agents/alpha.md', 'commands/go.md', 'guides/voice.md', 'hooks/h.js',
+        'skills/report/SKILL.md', 'skills/report/check.js',
       ]);
+    });
+    it('lists files inside a skill directory, never the directory itself', () => {
+      // A skill is a directory; a copy needs its files, and readFileSync on a directory throws.
+      for (const p of payload(repo)) assert.ok(fs.statSync(p.src).isFile(), p.rel);
     });
     it('leaves README and other repo files behind', () => {
       assert.ok(!payload(repo).some((p) => p.rel === 'README.md'));
@@ -146,6 +154,12 @@ describe('installer', () => {
       assert.ok(fs.existsSync(path.join(proj, '.claude/guides/voice.md')),
         'the guide the rewritten link points at must exist');
     });
+    it('copies a skill directory file by file', () => {
+      apply(plan(payload(repo), 'project', proj), { mode: 'project', force: false, log: quiet });
+      assert.strictEqual(
+        fs.readFileSync(path.join(proj, '.claude/skills/report/check.js'), 'utf8'), '// check');
+      assert.ok(fs.existsSync(path.join(proj, '.claude/skills/report/SKILL.md')));
+    });
     it('puts CLAUDE.md at the project root, not inside .claude', () => {
       apply(plan(payload(repo), 'project', proj), { mode: 'project', force: false, log: quiet });
       assert.ok(fs.existsSync(path.join(proj, 'CLAUDE.md')));
@@ -169,5 +183,17 @@ describe('installer', () => {
       mk(dest, 'real');
       assert.strictEqual(classify(path.join(repo, 'CLAUDE.md'), dest, 'global'), 'conflict');
     });
+  });
+});
+
+describe('this repo', () => {
+  it('tracks every file the installer ships, so a clone installs the same thing', () => {
+    // .gitignore is an allowlist; a new payload directory left off it installs from this
+    // checkout but silently never reaches a clone.
+    const { spawnSync } = require('node:child_process');
+    const root = path.join(__dirname, '..');
+    const rels = payload(root).map((p) => p.rel);
+    const r = spawnSync('git', ['-C', root, 'check-ignore', '--no-index', ...rels], { encoding: 'utf8' });
+    assert.strictEqual(r.stdout.trim(), '', `ignored by .gitignore:\n${r.stdout}`);
   });
 });

@@ -94,6 +94,19 @@ describe('update', () => {
     assert.strictEqual(e.action, 'unchanged');
   });
 
+  it('adds a skill that upstream shipped after the project was installed', () => {
+    install();
+    mk(path.join(repo, 'skills', 'report', 'SKILL.md'), '---\nname: report\n---\n');
+    mk(path.join(repo, 'skills', 'report', 'check.js'), '// check');
+    const entries = updatePlan(proj, items());
+    const skill = entries.filter((x) => x.rel.startsWith('skills/'));
+    assert.deepStrictEqual(skill.map((x) => [x.rel, x.action]).sort(),
+      [['skills/report/SKILL.md', 'add'], ['skills/report/check.js', 'add']]);
+    applyUpdate(proj, entries, { log: quiet });
+    assert.strictEqual(read(path.join(proj, '.claude', 'skills', 'report', 'check.js')), '// check');
+    assert.strictEqual(readBaseline(proj, 'skills/report/check.js'), '// check');
+  });
+
   it('takes upstream wholesale when the project never touched the file', () => {
     install();
     fs.writeFileSync(path.join(repo, 'guides', 'voice.md'), GUIDE_V1.replace('six', 'SIX'));

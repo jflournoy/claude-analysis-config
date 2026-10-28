@@ -33,16 +33,25 @@ const {
 const REPO = __dirname;
 const PAYLOAD = vendor.PAYLOAD_DIRS;
 
-/** Files to install, as {src, rel} pairs relative to the destination root. */
+/**
+ * Files to install, as {src, rel} pairs relative to the destination root.
+ * Walks subdirectories, because a skill is a directory (skills/<name>/SKILL.md
+ * plus whatever it ships); each file is installed on its own.
+ */
 function payload(repo = REPO) {
   const out = [];
+  const walk = (abs, rel) => {
+    for (const f of fs.readdirSync(abs, { withFileTypes: true })) {
+      if (f.name.startsWith('.')) continue;
+      const a = path.join(abs, f.name);
+      const r = path.join(rel, f.name);
+      if (f.isDirectory()) walk(a, r);
+      else out.push({ src: a, rel: r });
+    }
+  };
   for (const dir of PAYLOAD) {
     const abs = path.join(repo, dir);
-    if (!fs.existsSync(abs)) continue;
-    for (const f of fs.readdirSync(abs)) {
-      if (f.startsWith('.')) continue;
-      out.push({ src: path.join(abs, f), rel: path.join(dir, f) });
-    }
+    if (fs.existsSync(abs)) walk(abs, dir);
   }
   const claudeMd = path.join(repo, 'CLAUDE.md');
   if (fs.existsSync(claudeMd)) out.push({ src: claudeMd, rel: 'CLAUDE.md' });

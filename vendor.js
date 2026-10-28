@@ -39,7 +39,7 @@ const LEGACY_GUIDE_NAMES = {
   'bayesian-production': 'bayesian-production-tricks',
 };
 
-const PAYLOAD_DIRS = ['agents', 'commands', 'hooks', 'guides'];
+const PAYLOAD_DIRS = ['agents', 'commands', 'hooks', 'guides', 'skills'];
 
 /**
  * Where each item lands, per mode.

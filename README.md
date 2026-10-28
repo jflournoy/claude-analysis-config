@@ -141,6 +141,19 @@ correctness), `next-priorities`, and `usage-estimator`.
 All report findings and never edit. `CLAUDE_REVIEWER_DISPATCH=0` silences dispatch for a
 session. Adding a file type is one entry in `RULES` plus a test.
 
+### Skills
+
+| Skill | For |
+|---|---|
+| `skills/research-report/` | R output to an APA 7 write-up plus plain-language deck bullets; frequentist and Bayesian |
+
+`research-report` never trusts a number the model typed. In paste mode, `check-report.js`
+traces every number in both files to the saved R output, at the precision shown; anything
+derived has to show its arithmetic, which is re-done, and anything the user supplied is
+listed for a human to see. It also lints the APA and stakeholder conventions a pattern can
+decide. In Quarto mode the numbers are inline R, formatted by `apa-format.R`. A project can
+layer house rules (a chart spec, an audience) on top in its own `CLAUDE.md`.
+
 ### Commands
 
 `/commit`, `/push`, `/hygiene`, `/next`, `/refactor`, `/refactor-verified`.
@@ -181,6 +194,13 @@ come from there. Several later ideas come from her
 Those files were written from scratch for this repo's domain (R, Stan, reproducible
 analysis) rather than copied, and each carries an attribution comment. Her originals are
 better suited to web development and worth reading directly.
+
+`skills/research-report/` is adapted from [Carol Lee](https://github.com/goose-sploot)'s
+research-report skill, written for Intuit for Education's program evaluation. The context
+questions and causality gate, the reporting rules for each analysis, the wide pre/post
+descriptives table, and the stakeholder conventions (percentage points, "X times",
+moderation as a gap) are hers. The provenance checker, Quarto mode, Bayesian reporting, and
+the fuller APA table rules were added here.
 
 ## License
 
