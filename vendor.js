@@ -18,11 +18,17 @@
  * update needs no git history — only the repo's current files — and it works
  * the same whether or not the project commits .claude/.
  *
- * adopt() is for projects that predate all of this. There is no baseline, so
- * it reconstructs one: for each file it searches this repo's own history for
- * the version the project's copy most resembles, and merges against that. The
- * guess is reported and never applied without --apply, because a three-way
- * merge against a wrong base loses content silently.
+ * State is per file, not per project. A file with no baseline — a project
+ * that predates all of this, or a CLAUDE.md a first install declined to
+ * overwrite — is adopted where it stands: the version in this repo's history
+ * that the project's copy most resembles is taken as the base, and merged
+ * against. The guess is reported and never applied without --apply, because a
+ * three-way merge against a wrong base loses content silently.
+ *
+ * A file that cannot be merged safely is not a dead end. Upstream's copy is
+ * written beside it as <file>.upstream; the user ports what they want by hand
+ * and runs --resolve, which records that copy as the baseline. Every state
+ * names its next step, and that step is a command that will be accepted.
  */
 
 const fs = require('node:fs');
@@ -95,6 +101,23 @@ function rewriteLegacyLinks(text, repo = __dirname) {
 /** The body as it would be written into a project, links and all. */
 function renderForProject(src) {
   return rewriteGuidePaths(fs.readFileSync(src, 'utf8'), 'project');
+}
+
+/**
+ * Upstream's copy, left beside a file that could not be merged. The suffix goes
+ * after the real extension: agents/x.upstream.md would load as a second agent.
+ */
+const SIDECAR_SUFFIX = '.upstream';
+function sidecarPath(dest) { return `${dest}${SIDECAR_SUFFIX}`; }
+
+/** merge3 labels every marker, so a labelled one is ours; a bare ======= is a heading. */
+const CONFLICT_MARKER = /^(<{7}|>{7}) /m;
+
+function shellQuote(s) { return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`; }
+
+/** The exact command for a next step, runnable from anywhere. */
+function command(...args) {
+  return ['node', shellQuote(path.join(__dirname, 'install.js')), ...args.map(shellQuote)].join(' ');
 }
 
 function manifestPath(root) { return path.join(root, MANIFEST_REL); }
@@ -213,9 +236,26 @@ function merge3(ours, base, theirs) {
  * conflict       both moved and disagree; markers get written
  * add            new upstream file the project does not have
  * removed        the project deleted it; deletions are honoured, not undone
- * no-baseline    a file we cannot merge safely — adopt has not been run
+ *
+ * and, for a file with no baseline yet (see adoptEntry):
+ *
+ * merge          base reconstructed from history; combined against it
+ * no-ancestor    nothing in history resembles it; port by hand
+ * unresolved     upstream's copy is beside it, waiting on --resolve
  */
-function updatePlan(root, items) {
+function updatePlan(root, repo, items, { force = false } = {}) {
+  if (!repo) {
+    throw new Error('updatePlan needs the source repo: a file with no baseline is adopted from its history');
+  }
+  // A --global install leaves symlinks into this repo. Merging into one would
+  // write project-rendered text back into the source, for every project at once.
+  const linked = items.map((i) => destFor(i, 'project', root)).filter((d) => {
+    try { return fs.lstatSync(d).isSymbolicLink(); } catch { return false; }
+  });
+  if (linked.length) {
+    throw new Error(`${linked.length} file(s) under ${root} are symlinks, e.g. ${linked[0]} — ` +
+                    'a --global install? --update writes copies, and would write through them. Refusing.');
+  }
   return items.map((item) => {
     const rel = item.rel;
     const dest = destFor(item, 'project', root);
@@ -224,9 +264,7 @@ function updatePlan(root, items) {
     const ours = readIf(dest);
     const e = { rel, src: item.src, dest, upstream, base, ours };
 
-    if (base === null) {
-      return ours === null ? { ...e, action: 'add' } : { ...e, action: 'no-baseline' };
-    }
+    if (base === null) return adoptEntry(root, repo, e, { force });
     if (ours === null) {
       return { ...e, action: 'removed', upstreamMoved: base !== upstream };
     }
@@ -259,22 +297,36 @@ function orphanedBaselines(root, items) {
  * Write an update. Conflicted files get markers and a backup of what the
  * project had; the baseline advances to upstream either way, so the next
  * update merges against what is now installed rather than re-offering the
- * same change.
+ * same change. Files with no baseline go through applyAdopt.
  */
-function applyUpdate(root, entries, { log = console.log } = {}) {
+function applyUpdate(root, entries, opts = {}) {
+  if ('force' in opts) {
+    throw new Error('applyUpdate takes no force: pass it to updatePlan, which decides each outcome');
+  }
+  const { log = console.log } = opts;
   const counts = {};
   for (const e of entries) {
+    if (e.action === 'merge' || e.action === 'no-ancestor') {
+      applyAdopt(root, e, { log, counts });
+      continue;
+    }
     counts[e.action] = (counts[e.action] || 0) + 1;
     switch (e.action) {
+      case 'unresolved': {
+        const sc = path.relative(root, e.sidecar);
+        const moved = e.upstreamMoved
+          ? ' (upstream has moved since; the update after --resolve merges that in.)' : '';
+        log(`  UNRESOLVED ${e.rel} — port what you want from ${sc} by hand.${moved} ` +
+            `To merge against the reconstructed base instead, delete ${sc} and update with --force. ` +
+            `Otherwise run: ${command('--resolve', root, e.rel, '--apply')}`);
+        break;
+      }
       case 'unchanged':
         break;
       case 'removed':
         if (e.upstreamMoved) {
           log(`  GONE     ${e.rel} — you removed it; upstream has changed it since. Left removed.`);
         }
-        break;
-      case 'no-baseline':
-        log(`  SKIP     ${e.rel} — no baseline to merge against; run --adopt first`);
         break;
       case 'current':
         writeBaseline(root, e.rel, e.upstream);
@@ -383,42 +435,47 @@ function divergence(distance, ours, base) {
 }
 
 /**
- * What adopting would do, file by file, with the reconstructed base shown for
- * each one. Computes the merge but writes nothing — the caller prints this and
+ * What to do with a file that has no baseline, with the reconstructed base
+ * shown. Computes the merge but writes nothing — the caller prints this and
  * waits for --apply, because a merge against a wrong base loses content with
  * no marker to show for it.
  *
- * new          upstream file the project has never had
- * merge        base found; project edits and upstream changes combined
- * no-ancestor  nothing in history resembles it; port by hand
+ * A file whose sidecar is already there is unresolved, and stays so until
+ * --resolve: re-guessing a base for a file the user is halfway through porting
+ * would merge into their work in progress.
+ *
+ * What happens to a merge or no-ancestor entry is decided here, once, as
+ * `outcome`, so the dry run, the write and the summary cannot disagree:
+ *
+ * merge             write the merge (a weak base only with --force)
+ * install-upstream  a legacy file at another path is left for a hand port;
+ *                   the current-layout file installs clean, baseline and all
+ * sidecar           same path, nothing safe to merge: the file is left alone
+ *                   and upstream goes beside it, for --resolve. Installing
+ *                   over it would destroy the very edits there is no base for
  */
-function adoptPlan(root, repo, items) {
-  return items.map((item) => {
-    const rel = item.rel;
-    const dest = destFor(item, 'project', root);
-    const upstream = renderForProject(item.src);
-    const theirs = normalize(upstream);
-    const oursPath = projectCandidates(root, rel).find((p) => fs.existsSync(p)) || null;
-    const e = { rel, src: item.src, dest, upstream, oursPath, legacy: Boolean(oursPath) && oursPath !== dest };
+function adoptEntry(root, repo, e, { force = false } = {}) {
+  const sidecar = sidecarPath(e.dest);
+  if (fs.existsSync(sidecar)) {
+    return { ...e, action: 'unresolved', sidecar, upstreamMoved: fs.readFileSync(sidecar, 'utf8') !== e.upstream };
+  }
+  const oursPath = projectCandidates(root, e.rel).find((p) => fs.existsSync(p)) || null;
+  const a = { ...e, oursPath, legacy: Boolean(oursPath) && oursPath !== e.dest };
+  if (!oursPath) return { ...a, action: 'add' };
+  if (!a.legacy && e.ours === e.upstream) return { ...a, action: 'current' };
 
-    if (!oursPath) return { ...e, action: 'new' };
+  const ours = normalize(fs.readFileSync(oursPath, 'utf8'));
+  const base = findBase(repo, e.rel, ours);
+  const setAside = a.legacy ? 'install-upstream' : 'sidecar';
+  if (!base) return { ...a, action: 'no-ancestor', outcome: setAside, ours };
 
-    const ours = normalize(fs.readFileSync(oursPath, 'utf8'));
-    const base = findBase(repo, rel, ours);
-    if (!base) return { ...e, action: 'no-ancestor', ours };
-
-    const m = merge3(ours, base.body, theirs);
-    return {
-      ...e,
-      action: 'merge',
-      ours,
-      base,
-      divergence: divergence(base.distance, ours, base.body),
-      weak: divergence(base.distance, ours, base.body) > WEAK_BASE_RATIO,
-      merged: m.text,
-      conflicts: m.conflicts,
-    };
-  });
+  const m = merge3(ours, base.body, normalize(e.upstream));
+  const div = divergence(base.distance, ours, base.body);
+  const weak = div > WEAK_BASE_RATIO;
+  return {
+    ...a, action: 'merge', outcome: weak && !force ? setAside : 'merge',
+    ours, base, divergence: div, weak, merged: m.text, conflicts: m.conflicts,
+  };
 }
 
 /**
@@ -450,56 +507,90 @@ function projectExtras(root, repo, items) {
   return out.sort((a, b) => a.rel.localeCompare(b.rel));
 }
 
-/**
- * Write an adoption. A base flagged weak is treated as no base at all: merging
- * against a file that only coincidentally resembles the project's would produce
- * plausible text with content silently dropped, which is worse than doing
- * nothing. --force overrides, having seen the number in the dry run.
- */
-function applyAdopt(root, repo, entries, { log = console.log, force = false } = {}) {
-  const counts = {};
-  for (const e of entries) {
-    counts[e.action] = (counts[e.action] || 0) + 1;
-    if (e.action === 'merge' && e.weak && !force) {
-      log(`  SKIP     ${e.rel} — base is ${(e.divergence * 100).toFixed(0)}% different; ` +
-          `not a real ancestor. Port ${path.relative(root, e.oursPath)} by hand, or --force.`);
-      counts.skipped = (counts.skipped || 0) + 1;
-      if (e.legacy && !fs.existsSync(e.dest)) {
-        fs.mkdirSync(path.dirname(e.dest), { recursive: true });
-        fs.writeFileSync(e.dest, e.upstream);
-        writeBaseline(root, e.rel, e.upstream);
-        log(`  INSTALL  ${e.rel} — upstream copy only; nothing was merged into it`);
+/** Write one adoption, as adoptEntry decided. A weak base is merged only when --force decided it. */
+function applyAdopt(root, e, { log = console.log, counts = {} } = {}) {
+  const hand = path.relative(root, e.oursPath);
+  const why = e.action === 'no-ancestor' ? 'no ancestor in history'
+    : `base is ${(e.divergence * 100).toFixed(0)}% different, not a real ancestor`;
+  counts[e.outcome] = (counts[e.outcome] || 0) + 1;
+  switch (e.outcome) {
+    case 'install-upstream':
+      fs.mkdirSync(path.dirname(e.dest), { recursive: true });
+      fs.writeFileSync(e.dest, e.upstream);
+      writeBaseline(root, e.rel, e.upstream);
+      log(`  INSTALL  ${e.rel} — ${why}; upstream copy only. Port ${hand} into it by hand.`);
+      return;
+    case 'sidecar': {
+      const sidecar = sidecarPath(e.dest);
+      fs.writeFileSync(sidecar, e.upstream);
+      log(`  UNMERGED ${e.rel} — ${why}; left untouched, upstream written to ` +
+          `${path.relative(root, sidecar)}. Port by hand, then run: ${command('--resolve', root, e.rel, '--apply')}`);
+      return;
+    }
+    case 'merge': {
+      if (fs.existsSync(e.dest)) {
+        const b = backupPath(e.dest);
+        fs.copyFileSync(e.dest, b);
+        log(`  BACKUP   ${e.rel} -> ${path.basename(b)}`);
       }
-      continue;
+      fs.mkdirSync(path.dirname(e.dest), { recursive: true });
+      fs.writeFileSync(e.dest, e.merged);
+      writeBaseline(root, e.rel, e.upstream);
+      const note = e.conflicts ? ` — ${e.conflicts} conflict(s) to resolve by hand`
+        : e.legacy ? ` — supersedes ${hand}` : '';
+      log(`  MERGE    ${e.rel}${note}`);
+      return;
     }
-    if (e.action === 'no-ancestor') {
-      const hand = path.relative(root, e.oursPath);
-      // A legacy file at another path can be left for a hand port while the
-      // current-layout file installs cleanly. One at the same path cannot:
-      // installing would destroy the very edits there is no base to merge.
-      if (e.legacy && !fs.existsSync(e.dest)) {
-        fs.mkdirSync(path.dirname(e.dest), { recursive: true });
-        fs.writeFileSync(e.dest, e.upstream);
-        writeBaseline(root, e.rel, e.upstream);
-        log(`  INSTALL  ${e.rel} — no ancestor; port ${hand} by hand, nothing was merged`);
-      } else {
-        log(`  SKIP     ${e.rel} — no ancestor in history; port ${hand} by hand`);
-      }
-      continue;
-    }
-    if (e.action === 'merge' && fs.existsSync(e.dest)) {
-      const b = backupPath(e.dest);
-      fs.copyFileSync(e.dest, b);
-      log(`  BACKUP   ${e.rel} -> ${path.basename(b)}`);
-    }
-    fs.mkdirSync(path.dirname(e.dest), { recursive: true });
-    fs.writeFileSync(e.dest, e.action === 'merge' ? e.merged : e.upstream);
-    writeBaseline(root, e.rel, e.upstream);
-    const note = e.action === 'merge' && e.conflicts ? ` — ${e.conflicts} conflict(s) to resolve by hand`
-      : e.legacy ? ` — supersedes ${path.relative(root, e.oursPath)}` : '';
-    log(`  ${e.action.toUpperCase().padEnd(8)} ${e.rel}${note}`);
+    default:
+      throw new Error(`unknown adopt outcome for ${e.rel}: ${e.outcome}`);
   }
-  return counts;
+}
+
+/* -------------------------------------------------------------- resolve --- */
+
+/**
+ * Check a --resolve request: each name must be a file this repo ships, with no
+ * baseline yet and its sidecar beside it, and no conflict markers left in it.
+ * Every problem is collected and thrown together, so one run lists them all.
+ * A file the user deleted resolves too: that records the deletion, which the
+ * next update then honours.
+ */
+function resolvePlan(root, items, names) {
+  if (!names.length) throw new Error('--resolve needs at least one file, e.g. CLAUDE.md');
+  const problems = [];
+  const out = [];
+  for (const name of names) {
+    const item = items.find((i) => i.rel === name ||
+      path.relative(root, destFor(i, 'project', root)) === name);
+    if (!item) { problems.push(`${name}: this repo does not ship that file`); continue; }
+    const dest = destFor(item, 'project', root);
+    const sidecar = sidecarPath(dest);
+    if (readBaseline(root, item.rel) !== null) {
+      problems.push(`${item.rel}: already tracked; nothing to resolve. Run: ${command('--update', root)}`);
+      continue;
+    }
+    if (!fs.existsSync(sidecar)) {
+      problems.push(`${item.rel}: no ${path.relative(root, sidecar)} to resolve against. ` +
+                    `Run: ${command('--update', root, '--apply')}`);
+      continue;
+    }
+    if (fs.existsSync(dest) && CONFLICT_MARKER.test(fs.readFileSync(dest, 'utf8'))) {
+      problems.push(`${item.rel}: still has conflict markers; finish the port first`);
+      continue;
+    }
+    out.push({ rel: item.rel, dest, sidecar, removed: !fs.existsSync(dest) });
+  }
+  if (problems.length) throw new Error(problems.join('\n'));
+  return out;
+}
+
+/** The sidecar is what the port was made against, so it — not today's upstream — is the base. */
+function applyResolve(root, entries, { log = console.log } = {}) {
+  for (const e of entries) {
+    writeBaseline(root, e.rel, fs.readFileSync(e.sidecar, 'utf8'));
+    fs.unlinkSync(e.sidecar);
+    log(`  RESOLVED ${e.rel}${e.removed ? ' — recorded as removed; updates will leave it out' : ''}`);
+  }
 }
 
 module.exports = {
@@ -507,6 +598,8 @@ module.exports = {
   destFor, rewriteGuidePaths, rewriteLegacyLinks, renderForProject, normalize,
   manifestPath, baselinePath, readManifest, writeManifest, readBaseline, writeBaseline,
   backupPath, git, diffSize, merge3, lineCount, divergence, WEAK_BASE_RATIO,
+  SIDECAR_SUFFIX, sidecarPath, command,
   updatePlan, orphanedBaselines, applyUpdate,
-  projectCandidates, historyPaths, findBase, adoptPlan, projectExtras, applyAdopt,
+  projectCandidates, historyPaths, findBase, adoptEntry, projectExtras, applyAdopt,
+  resolvePlan, applyResolve,
 };

@@ -60,32 +60,38 @@ node install.js --update ../my-analysis --apply
 Baseline is the common ancestor, the project's file is ours, this repo's file is theirs.
 Project edits survive, upstream changes arrive, and anything genuinely contested comes back
 as conflict markers — nothing picks a side quietly. A file the project deleted stays
-deleted; a file it edited with no baseline is skipped, not guessed at; a file this repo has
-dropped is reported and left in place.
+deleted; a file this repo has dropped is reported and left in place.
 
-### Adopting a project with no baseline
+### Files with no baseline
 
-A config copied in by hand has no baseline to merge against. `--adopt` reconstructs one:
-for each file it searches **this repo's own history** for the version the project's copy
-most resembles, and merges against that.
-
-```bash
-node install.js --adopt ../my-analysis           # shows the base it found for each file
-node install.js --adopt ../my-analysis --apply
-```
+State is kept per file, so a project does not have to be "vendored" or "not" as a whole. A
+config copied in by hand, or a `CLAUDE.md` that `--project` declined to overwrite, has no
+baseline. `--update` reconstructs one for each such file: it searches **this repo's own
+history** for the version the project's copy most resembles, and merges against that.
 
 The dry run prints the base commit, how many lines the project's copy differs from it, and
 what the merge would do — because a three-way merge against a wrong base loses content with
 no marker to show for it, so the guess is yours to accept. A base more than half different
-from the project's file is not an ancestor; adopt says so and refuses to merge it without
-`--force`, installing the current file untouched instead so the old one can be ported by
-hand.
+from the project's file is not an ancestor, and is not merged without `--force`.
 
-It also reports what it will *not* touch: files under the project's `.claude/` that this
-repo does not ship, split into stale copies of things we once shipped (safe to delete),
+A file that cannot be merged is left untouched, with this repo's copy written beside it as
+`<file>.upstream`. Port what you want from it by hand, then record the port:
+
+```bash
+node install.js --resolve ../my-analysis CLAUDE.md --apply
+```
+
+That makes the `.upstream` copy the file's baseline and deletes it, so the next `--update`
+is an ordinary three-way merge — including anything upstream changed while you were
+porting. `--resolve` refuses a file that still has conflict markers. Every line that leaves
+a file waiting prints the exact command for the next step.
+
+The update also reports what it will *not* touch: files under the project's `.claude/` that
+this repo does not ship, split into stale copies of things we once shipped (safe to delete),
 forks of them (a judgement call), and the project's own work (keep). Guides kept at the
 `CLAUDE_<name>.md` root path are found, merged into `.claude/guides/`, and left in place for
-you to delete.
+you to delete; one with no real ancestor is left for a hand port while the current file
+installs clean. `--adopt` is the old name for this and still works.
 
 ### All of them are safe by default
 
@@ -169,8 +175,11 @@ frontmatter — the regression test for a real bug where all eight agents used t
 schema, loaded silently as nothing, and no one noticed for months.
 
 Vendoring is tested against real git fixtures: every update outcome (fast-forward, clean
-merge, conflict, a deletion the project meant, a file with no baseline), and adopt's search
-through history, including a guide renamed on its way into this repo. The weak-base
+merge, conflict, a deletion the project meant, a file with no baseline), and the search
+through history, including a guide renamed on its way into this repo. The tests that no
+file is left with nowhere to go run the commands the tool prints and fail if any is
+refused — the regression test for a file that `--update` sent to `--adopt` and `--adopt`
+sent back. The weak-base
 threshold is a test of its own, pinned to the numbers measured on a real adoption — the
 guides that genuinely descend from ours sit at 23-38% divergence, the one rewritten from
 scratch at 79%.

@@ -6,12 +6,13 @@
  *   node install.js --global --apply       # symlink into ~/.claude
  *   node install.js --project ../my-repo --apply   # copy into <repo>/.claude
  *   node install.js --update  ../my-repo           # take upstream changes, keeping the project's
- *   node install.js --adopt   ../my-repo           # bring a pre-vendoring project in
+ *   node install.js --resolve ../my-repo CLAUDE.md # after hand-porting a file update could not merge
  *
  * Global uses symlinks: one source of truth, edits here take effect everywhere.
  * Project uses copies, plus a baseline of exactly what was copied, so the
  * project can change anything and still take upstream changes later — see
- * vendor.js. --update is a three-way merge, never an overwrite.
+ * vendor.js. --update is a three-way merge, never an overwrite; a file with no
+ * baseline yet is adopted from this repo's history, file by file.
  *
  * Nothing is written without --apply. A real file in the way is skipped unless
  * --force, which renames it to a timestamped backup first. Only paths this repo
@@ -27,7 +28,7 @@ const path = require('node:path');
 const vendor = require('./vendor.js');
 const {
   destFor, rewriteGuidePaths, backupPath, readManifest, writeManifest, writeBaseline,
-  updatePlan, applyUpdate, orphanedBaselines, adoptPlan, applyAdopt, projectExtras,
+  updatePlan, applyUpdate, orphanedBaselines, projectExtras, resolvePlan, applyResolve,
 } = vendor;
 
 const REPO = __dirname;
@@ -127,56 +128,119 @@ function installProject(root, entries, { force, repo = REPO, log = console.log }
   return result;
 }
 
-function usage() {
-  console.log(`Usage:
+function usage(log = console.log) {
+  log(`Usage:
   node install.js --global [--apply] [--force]
   node install.js --project <dir> [--apply] [--force]
-  node install.js --update  <dir> [--apply]
-  node install.js --adopt   <dir> [--apply]
+  node install.js --update  <dir> [--apply] [--force]
+  node install.js --resolve <dir> <file>... [--apply]
 
   --global        symlink into ~/.claude, applying to every project
   --project DIR   copy into DIR/.claude, with a baseline so it can be updated
-  --update DIR    three-way merge upstream changes into a vendored project
-  --adopt DIR     vendor a project that predates the baseline, reconstructing
-                  each file's ancestor from this repo's history
+  --update DIR    three-way merge upstream changes into a project. A file with
+                  no baseline yet is adopted: its ancestor is reconstructed from
+                  this repo's history. One that cannot be merged is left alone,
+                  with upstream's copy beside it as <file>.upstream
+  --resolve DIR   after porting <file>.upstream into <file> by hand, record it
+                  as the baseline so later updates merge normally
+  --adopt DIR     old name for --update
   --apply         actually write; omit for a dry run
-  --force         replace real files, backing them up first`);
+  --force         replace real files, backing them up first; with --update,
+                  merge against a base flagged weak`);
 }
 
-function reportUpdate(entries, root, items) {
+function adoptDetail(e) {
+  const base = e.base ? `${e.base.commit}:${e.base.path}, ${e.base.distance} line(s) apart` : 'no base found';
+  const will = {
+    merge: e.conflicts ? `merge, ${e.conflicts} conflict(s)` : 'clean merge',
+    sidecar: 'left untouched; upstream written beside it',
+    'install-upstream': 'upstream installed; port the old file by hand',
+  }[e.outcome];
+  const warn = !e.weak ? ''
+    : e.outcome === 'merge' ? ` ** weak base (${(e.divergence * 100).toFixed(0)}% differs) — merging anyway, --force **`
+      : ` ** weak base (${(e.divergence * 100).toFixed(0)}% of the file differs) — not merged without --force **`;
+  return ` [no baseline; ${base}; ${will}]${warn}`;
+}
+
+function reportUpdate(entries, root, repo, items, log = console.log) {
   for (const e of entries) {
-    const note = e.action === 'conflict' ? ` (${e.conflicts} conflict(s))` : '';
-    console.log(`  ${e.action.padEnd(12)} ${e.rel}${note}`);
+    let note = '';
+    if (e.action === 'conflict') note = ` (${e.conflicts} conflict(s))`;
+    if (e.action === 'merge' || e.action === 'no-ancestor') note = adoptDetail(e);
+    if (e.action === 'unresolved') {
+      note = ` — waiting on --resolve${e.upstreamMoved ? '; upstream has moved since the sidecar was written' : ''}`;
+    }
+    log(`  ${e.action.padEnd(12)} ${e.rel}${note}`);
+    if (e.legacy) log(`  ${' '.repeat(12)} ↳ from ${path.relative(root, e.oursPath)} (left in place; delete once you are satisfied)`);
   }
   for (const rel of orphanedBaselines(root, items)) {
-    console.log(`  ${'dropped'.padEnd(12)} ${rel} — upstream no longer ships this; left in place`);
+    log(`  ${'dropped'.padEnd(12)} ${rel} — upstream no longer ships this; left in place`);
   }
-}
-
-function reportAdopt(entries, root, repo, items) {
-  console.log(`  action    ${'file'.padEnd(38)} ${'base found'.padEnd(40)} Δlines  merge`);
-  for (const e of entries) {
-    const base = e.base ? `${e.base.commit}:${e.base.path}` : '—';
-    const d = e.base ? String(e.base.distance) : '—';
-    const merge = e.action === 'merge' ? (e.conflicts ? `${e.conflicts} conflict(s)` : 'clean') : '—';
-    const warn = e.weak
-      ? `  ** weak base (${(e.divergence * 100).toFixed(0)}% of the file differs) — check before applying **`
-      : '';
-    console.log(`  ${e.action.padEnd(9)} ${e.rel.padEnd(38)} ${base.padEnd(40)} ${d.padEnd(6)} ${merge}${warn}`);
-    if (e.legacy) console.log(`  ${' '.repeat(9)} ↳ from ${path.relative(root, e.oursPath)} (left in place; delete once you are satisfied)`);
+  for (const e of entries.filter((x) => x.outcome === 'sidecar')) {
+    const sidecar = path.relative(root, vendor.sidecarPath(e.dest));
+    log(`\n${e.rel}: --apply leaves it untouched and writes ${sidecar}. Port by hand, then run: ` +
+        vendor.command('--resolve', root, e.rel, '--apply'));
+    if (e.weak) log(`Or merge against the weak base anyway: ${vendor.command('--update', root, '--force', '--apply')}`);
   }
+  for (const e of entries.filter((x) => x.action === 'unresolved')) {
+    log(`\n${e.rel}: port what you want from ${path.relative(root, e.sidecar)}, then run: ` +
+        vendor.command('--resolve', root, e.rel, '--apply'));
+  }
+  if (!entries.some((e) => e.action === 'merge' || e.action === 'no-ancestor')) return;
   const extras = projectExtras(root, repo, items);
   if (!extras.length) return;
-  console.log('\nProject files upstream does not ship (never touched by adopt):');
+  log('\nProject files upstream does not ship (never touched by update):');
   for (const x of extras) {
     const why = x.kind === 'stale' ? `identical to ${x.base.commit}:${x.base.path} — a copy of ours, safe to delete`
       : x.kind === 'edited-fork' ? `forked from ${x.base.commit}:${x.base.path}, ${x.base.distance} line(s) changed here`
         : 'no ancestor here — the project wrote it, keep it';
-    console.log(`  ${x.kind.padEnd(12)} ${x.rel.padEnd(38)} ${why}`);
+    log(`  ${x.kind.padEnd(12)} ${x.rel.padEnd(38)} ${why}`);
   }
 }
 
-function main(argv = process.argv.slice(2)) {
+function runResolve(root, names, { repo, doApply, log, err }) {
+  let entries;
+  try {
+    entries = resolvePlan(root, payload(repo), names);
+  } catch (e) {
+    err(e.message);
+    return 1;
+  }
+  if (!doApply) {
+    for (const e of entries) log(`  resolve      ${e.rel}${e.removed ? ' (removed)' : ''}`);
+    log('\nRe-run with --apply to write. Nothing has been changed.');
+    return 0;
+  }
+  applyResolve(root, entries, { log });
+  return 0;
+}
+
+function runUpdate(root, { repo, doApply, force, log, err }) {
+  const items = payload(repo);
+  let entries;
+  try {
+    entries = updatePlan(root, repo, items, { force });
+  } catch (e) {
+    err(e.message);
+    return 1;
+  }
+  log(`${doApply ? 'Applying' : 'Dry run —'} update of ${entries.length} item(s) in ${root}\n`);
+  if (!doApply) {
+    reportUpdate(entries, root, repo, items, log);
+    log('\nRe-run with --apply to write. Nothing has been changed.');
+    return 0;
+  }
+  const counts = applyUpdate(root, entries, { log });
+  writeManifest(root, repo, { mode: 'project', via: 'update' });
+  log(`\n${Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(', ')}`);
+  const conflicted = entries.filter((e) => e.conflicts && (e.action !== 'merge' || e.outcome === 'merge')).length;
+  if (conflicted) log(`${conflicted} file(s) contain conflict markers. Resolve them before trusting this config.`);
+  const waiting = entries.filter((e) => e.action === 'unresolved' || e.outcome === 'sidecar').length;
+  if (waiting) log(`${waiting} file(s) wait on a hand port and --resolve; each line above names the command.`);
+  return 0;
+}
+
+function main(argv = process.argv.slice(2), { repo = REPO, log = console.log, err = console.error } = {}) {
   const doApply = argv.includes('--apply');
   const force = argv.includes('--force');
   const dirArg = (flag) => {
@@ -188,71 +252,52 @@ function main(argv = process.argv.slice(2)) {
     ['project', dirArg('--project')],
     ['update', dirArg('--update')],
     ['adopt', dirArg('--adopt')],
+    ['resolve', dirArg('--resolve')],
   ].filter(([, v]) => v);
 
-  if (modes.length !== 1) { usage(); return 1; }
-  const [mode, value] = modes[0];
+  if (modes.length !== 1) { usage(log); return 1; }
+  let [mode, value] = modes[0];
   const root = mode === 'global' ? path.join(os.homedir(), '.claude') : path.resolve(value);
 
   if (mode !== 'global' && !fs.existsSync(root)) {
-    console.error(`No such directory: ${root}`);
+    err(`No such directory: ${root}`);
     return 1;
   }
 
-  const items = payload();
-
-  if (mode === 'update' || mode === 'adopt') {
-    const manifest = readManifest(root);
-    if (mode === 'update' && !manifest) {
-      console.error(`${root} has no ${vendor.MANIFEST_REL}. Use --project for a fresh install, ` +
-                    'or --adopt to bring an existing config in.');
-      return 1;
-    }
-    if (mode === 'adopt' && manifest) {
-      console.error(`${root} is already vendored (installed from ${manifest.sourceCommit}). Use --update.`);
-      return 1;
-    }
-    const entries = mode === 'update' ? updatePlan(root, items) : adoptPlan(root, REPO, items);
-    console.log(`${doApply ? 'Applying' : 'Dry run —'} ${mode} of ${entries.length} item(s) in ${root}\n`);
-    if (!doApply) {
-      if (mode === 'update') reportUpdate(entries, root, items);
-      else reportAdopt(entries, root, REPO, items);
-      console.log('\nRe-run with --apply to write. Nothing has been changed.');
-      return 0;
-    }
-    const counts = mode === 'update'
-      ? applyUpdate(root, entries, {})
-      : applyAdopt(root, REPO, entries, { force });
-    writeManifest(root, REPO, { mode: 'project', via: mode });
-    const conflicted = entries.filter((e) => e.conflicts).length;
-    console.log(`\n${Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(', ')}`);
-    if (conflicted) {
-      console.log(`${conflicted} file(s) contain conflict markers. Resolve them before trusting this config.`);
-    }
-    return 0;
+  if (mode === 'adopt') {
+    err('--adopt is now part of --update, which adopts any file with no baseline. Running --update.');
+    mode = 'update';
+  }
+  if (mode === 'update') return runUpdate(root, { repo, doApply, force, log, err });
+  if (mode === 'resolve') {
+    const at = argv.indexOf('--resolve') + 2;
+    const rest = argv.slice(at);
+    const stop = rest.findIndex((a) => a.startsWith('--'));
+    return runResolve(root, stop === -1 ? rest : rest.slice(0, stop), { repo, doApply, log, err });
   }
 
+  const items = payload(repo);
   const entries = plan(items, mode, root);
-  console.log(`${doApply ? 'Installing' : 'Dry run —'} ${entries.length} item(s) ` +
+  log(`${doApply ? 'Installing' : 'Dry run —'} ${entries.length} item(s) ` +
               `into ${root}${mode === 'project' ? '/.claude' : ''} [${mode}]\n`);
 
   if (!doApply) {
-    for (const e of entries) console.log(`  ${e.action.padEnd(14)} ${e.rel}`);
-    console.log('\nRe-run with --apply to write.');
+    for (const e of entries) log(`  ${e.action.padEnd(14)} ${e.rel}`);
+    log('\nRe-run with --apply to write.');
     const c = entries.filter((e) => e.action === 'conflict').length;
-    if (c) console.log(`${c} real file(s) in the way; --force replaces them after backup.`);
+    if (c) log(`${c} real file(s) in the way; --force replaces them after backup.`);
     return 0;
   }
 
   const { written, skipped } = mode === 'project'
-    ? installProject(root, entries, { force })
-    : apply(entries, { mode, force });
-  console.log(`\n${mode === 'global' ? 'Linked' : 'Copied'} ${written}, skipped ${skipped}.`);
+    ? installProject(root, entries, { force, repo, log })
+    : apply(entries, { mode, force, log });
+  log(`\n${mode === 'global' ? 'Linked' : 'Copied'} ${written}, skipped ${skipped}.`);
   if (mode === 'global') {
-    console.log('Merge the PostToolUse block from settings.example.json into ~/.claude/settings.json.');
+    log('Merge the PostToolUse block from settings.example.json into ~/.claude/settings.json.');
   } else {
-    console.log(`Merge the PostToolUse block from settings.example.json into ${root}/.claude/settings.json,`);
-    console.log('changing $HOME/.claude/hooks to $CLAUDE_PROJECT_DIR/.claude/hooks.');
+    log(`Merge the PostToolUse block from settings.example.json into ${root}/.claude/settings.json,`);
+    log('changing $HOME/.claude/hooks to $CLAUDE_PROJECT_DIR/.claude/hooks.');
   }
   return 0;
 }
