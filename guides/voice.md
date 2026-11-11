@@ -410,8 +410,10 @@ carry the em-dash / italic-aside / self-justification tells and need only a ligh
    descriptions, and they reach every document the code produces, so they need rewriting too.
    Check the test suite for string assertions before editing them.
 
-A lint script, if the project has one, counts these tells per file so a rewrite can be checked
-programmatically rather than by eye. Read the `bullet` column as information, not a target:
+`voice-lint.sh`, which ships beside this guide, counts these tells per file so a rewrite can be
+checked programmatically rather than by eye: `bash ~/.claude/guides/voice-lint.sh FILE...`
+(`.claude/guides/` in a vendored project), with `--claude` to add a model read for the
+structural tells no regex can see. Read the `bullet` column as information, not a target:
 a report full of parallel lists can be fine. The columns that should go to zero are `bold`,
 `boiler`, `absent`, and `selfj`; `emdash` should fall to two or three per thousand words
 (`words_per_emdash` ≥ ~350); and `casual` (contractions, "you", "actually") is
@@ -914,5 +916,5 @@ adjacent to, and close with a small concrete ask rather than a grand conclusion.
   to trust"; main claim before its condition; no internal correction history in
   client-facing text; no redundant "rather than" tails; the client's own stated practices
   attributed as theirs, not framed as a discovery; em-dashes typed as `---`, never spaced.
-- If the project has a voice lint script: `bold`, `boiler`, `absent`, `selfj` at zero,
+- `voice-lint.sh` (§7) run on the changed files: `bold`, `boiler`, `absent`, `selfj` at zero,
   `words_per_emdash` ≥ ~350, `casual` non-zero in body prose is expected.
